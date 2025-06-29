@@ -40,7 +40,7 @@ import {
     name: 'SatContracts',
     description: 'Put your sats to work—AI-verified micro-escrow on Bitcoin’s first zk-rollup',
     url: 'https://SatContracts.vercel.app/', // origin must match your domain & subdomain
-    icons: ['https://raw.githubusercontent.com/shreyan001/SatsContracts/refs/heads/main/public/logo.png'],
+    icons: ['https://raw.githubusercontent.com/shreyan001/satcontracts/refs/heads/main/public/logo.png'],
   };
   
   export const publicClient = createPublicClient({
