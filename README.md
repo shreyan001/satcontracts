@@ -1,8 +1,4 @@
-Here's a complete and properly formatted `README.md` for your project:
 
----
-
-````markdown
 # 🛰️ SatContracts
 
 **Turn every satoshi into a smart contract** – AI-verified escrows for anything digital, powered by Citrea.
@@ -29,30 +25,24 @@ SatContracts allows users to create trust-minimized, automated escrow contracts 
    ```bash
    git clone https://github.com/your-username/satcontracts.git
    cd satcontracts
-````
+   ```
 
 2. **Install dependencies**
-
    ```bash
    yarn
    ```
 
 3. **Configure environment variables**
-
    Create a `.env` file in the root directory with the following content:
-
    ```
    NEXTAUTH_SECRET=''
    NEXT_PUBLIC_PROJECT_ID=''
-
    NEXT_PUBLIC_GROQ_API_KEY=""
    TOGETHER_AI_API_KEY=''
    ```
-
    > 🧠 You can obtain your WalletConnect `PROJECT_ID` by visiting [https://cloud.walletconnect.com](https://cloud.walletconnect.com)
 
 4. **Start the dev server**
-
    ```bash
    yarn dev
    ```
@@ -142,7 +132,3 @@ If you're building custom verifier templates, check out the `verifiers/` directo
 ## 📜 License
 
 MIT © 2025 – SatContracts Team
-
-
-
-```
