@@ -1,7 +1,7 @@
 'use client';
 
 import React, { ReactNode } from 'react';
-import { config, projectId, siweConfig, metadata } from './siwe';
+import { config, projectId, metadata } from './siwe';
 
 import { createWeb3Modal } from '@web3modal/wagmi/react';
 
@@ -14,14 +14,14 @@ const queryClient = new QueryClient();
 
 if (!projectId) throw new Error('Project ID is not defined');
 
-// Create modal
+// Create modal WITHOUT SIWE initially - we'll handle authentication manually
 createWeb3Modal({
   metadata: metadata,
   wagmiConfig: config,
   projectId,
-  enableAnalytics: true, // Optional - defaults to your Cloud configuration
-  enableOnramp: true, // Optional - false as default
-  siweConfig,
+  enableAnalytics: true,
+  enableOnramp: true,
+  // siweConfig: undefined, // Disabled - we'll handle SIWE manually
   themeMode: 'dark',
   themeVariables: {
     '--w3m-font-family': 'monospace, sans-serif',

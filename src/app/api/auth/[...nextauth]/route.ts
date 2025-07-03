@@ -6,6 +6,7 @@ import {
   getChainIdFromMessage,
   getAddressFromMessage,
 } from '@web3modal/siwe';
+import { citreaTestnet, parseChainId } from '@/walletConnect/siwe';
 
 declare module 'next-auth' {
   interface Session extends SIWESession {
@@ -48,6 +49,15 @@ const providers = [
         const address = getAddressFromMessage(message);
         const chainId = getChainIdFromMessage(message);
 
+        // Extract numeric chain ID from EIP-155 format (e.g., "eip155:5115" -> 5115)
+        const numericChainId = parseChainId(chainId);
+
+        // Validate that the chain ID matches Citrea Testnet
+        if (numericChainId !== citreaTestnet.id) {
+          console.error(`Invalid chain ID. Expected: ${citreaTestnet.id}, Got: ${chainId} (parsed: ${numericChainId})`);
+          return null;
+        }
+
         const isValid = await verifySignature({
           address,
           message,
@@ -58,12 +68,13 @@ const providers = [
 
         if (isValid) {
           return {
-            id: `${chainId}:${address}`,
+            id: `${numericChainId}:${address}`,
           };
         }
 
         return null;
       } catch (e) {
+        console.error('Authorization failed:', e);
         return null;
       }
     },
