@@ -117,7 +117,7 @@ export function AgentsGuildInterface() {
                   <SelectItem value="current">Active Escrows</SelectItem>
                   <SelectItem value="game-rental">Game Key Rentals</SelectItem>
                   <SelectItem value="bounties">Freelance Bounties</SelectItem>
-                </SelectContent>
+                </SelectContent>  
               </Select>
             </div>
             <div className="flex items-center space-x-2">
