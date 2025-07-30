@@ -95,8 +95,8 @@ export function AgentsGuildInterface() {
           <div className="mb-6">
             <h2 className="text-xl font-bold mb-2">Recent Projects</h2>
             <ul className="space-y-2">
-              {["Next.js Integration", "DeFi Market Analysis", "OpenAI SDK Implementation"].map((project, index) => (
-                <li key={index} className="bg-black text-white p-2">
+              {["Game Key Rental", "Domain Lease Agreement", "Gift Card Exchange"].map((project, index) => (
+                <li key={index} className="bg-[#d47615] text-white p-2">
                   {project}
                 </li>
               ))}
