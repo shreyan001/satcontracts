@@ -94,9 +94,9 @@ export function AgentsGuildInterface() {
           </div>
           <div className="mb-6">
             <h2 className="text-xl font-bold mb-2">Recent Escrow Contracts</h2>
-            <ul className="space-y-2">
+            <ul className="space-y-2 bg-black p-2 rounded-md">
               {["Game Key Rental", "Domain Lease Agreement", "Gift Card Exchange"].map((project, index) => (
-                <li key={index} className="bg-[#d47615] text-white p-2">
+                <li key={index} className="bg-black text-white p-2 rounded-sm">
                   {project}
                 </li>
               ))}
@@ -111,7 +111,7 @@ export function AgentsGuildInterface() {
               </Button>
               <Select>
                 <SelectTrigger className="w-[200px] bg-black text-white border border-white rounded-md">
-                  <SelectValue placeholder="Select Project" />
+                  <SelectValue placeholder="Select Escrow Type" />
                 </SelectTrigger>
               <SelectContent className="bg-black text-white border-gray-800">
                   <SelectItem value="current">Active Escrows</SelectItem>
@@ -122,7 +122,7 @@ export function AgentsGuildInterface() {
             </div>
             <div className="flex items-center space-x-2">
               <Input 
-                placeholder={isConnected ? "Describe your project or ask a question..." : "Connect wallet to chat"} 
+                placeholder={isConnected ? "Describe your escrow agreement..." : "Connect wallet to create escrows"} 
                 className="bg-black text-white border-gray-800 rounded-md"
                 disabled={!isConnected}
               />
