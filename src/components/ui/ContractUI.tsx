@@ -145,8 +145,8 @@ export function SmartContractDisplay({ contractCode }: { contractCode: string })
       </p>
       <div className="mt-4">
         <p className="text-sm text-gray-300 mt-2 mb-2">Audit your deployed contract to get a detailed report:</p>
-        <Button onClick={() => window.open(`https://explorer.testnet.citrea.xyz/address/${deployedAddress}/blockscout/`, '_blank')} className="bg-[#d47615] text-black rounded-none hover:bg-[#d47615]/80 transition-colors duration-200">
-          SolidityScan
+        <Button onClick={() => window.open(`https://explorer.testnet.citrea.xyz/address/${deployedAddress}`, '_blank')} className="bg-[#d47615] text-black rounded-none hover:bg-[#d47615]/80 transition-colors duration-200">
+          check on explorer
         </Button>
       </div>
     </div>
