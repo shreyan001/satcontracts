@@ -13,6 +13,7 @@ import ConnectButton from './ui/walletButton'
 import Image from 'next/image'
 import PortfolioWallet from './ui/portfolioWallet'
 import { useAccount } from 'wagmi'
+import PreBuiltTemplates from './ui/preBuiltTemplates';
 
 export function AgentsGuildInterface() {
   const { address, isConnected } = useAccount()
@@ -100,55 +101,44 @@ export function AgentsGuildInterface() {
                   {project}
                 </li>
               ))}
-            </ul>
+            </ul>here
           </div>
         </div>
         <div className="flex-1 flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b border-gray-800">
-            <div className="flex items-center space-x-2">
-              <Button className="bg-black text-white border border-white rounded-md px-3 py-1 text-sm hover:bg-white hover:text-black transition-colors">
-                Menu
-              </Button>
-              <Select>
-                <SelectTrigger className="w-[200px] bg-black text-white border border-white rounded-md">
-                  <SelectValue placeholder="Select Escrow Type" />
-                </SelectTrigger>
-              <SelectContent className="bg-black text-white border-gray-800">
-                  <SelectItem value="current">Active Escrows</SelectItem>
-                  <SelectItem value="game-rental">Game Key Rentals</SelectItem>
-                  <SelectItem value="bounties">Freelance Bounties</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Input 
-                placeholder={isConnected ? "Describe your escrow agreement..." : "Connect wallet to create escrows"} 
-                className="bg-black text-white border-gray-800 rounded-md"
-                disabled={!isConnected}
-              />
-              <Button className={`bg-black text-white border border-white rounded-md px-4 py-2 text-sm hover:bg-white hover:text-black transition-colors flex items-center space-x-2 ${!isConnected && 'opacity-50 cursor-not-allowed'}`} disabled={!isConnected}>
-                <Search className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-          <ScrollArea ref={scrollAreaRef} className="h-[calc(100vh-100px)]">
-            <div className="flex flex-col w-full gap-1 p-4">
-             {elements}
-            </div>
+          <ScrollArea ref={scrollAreaRef} className="flex-grow">
+            {elements.length > 0 ? (
+              <div className="flex flex-col w-full gap-1 p-4">{elements}</div>
+            ) : isConnected ? (
+              <div className="flex h-full items-center justify-center">
+                <PreBuiltTemplates />
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <p>Please connect your wallet to start.</p>
+              </div>
+            )}
           </ScrollArea>
           <div className="p-4 border-t border-gray-800">
             <div className="flex space-x-2">
               <Input
-                placeholder={isConnected ? "Describe your project or ask a question..." : "Connect wallet to chat"}
+                placeholder={
+                  isConnected
+                    ? "Describe your project or ask a question..."
+                    : "Connect wallet to chat"
+                }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && isConnected && handleSend()}
+                onKeyPress={(e) =>
+                  e.key === "Enter" && isConnected && handleSend()
+                }
                 className="bg-black text-white border-gray-800 rounded-md flex-grow"
                 disabled={!isConnected}
               />
-              <Button 
-                onClick={handleSend} 
-                className={`bg-black text-white border border-white rounded-md px-4 py-2 text-sm hover:bg-white hover:text-black transition-colors flex items-center space-x-2 ${!isConnected && 'opacity-50 cursor-not-allowed'}`}
+              <Button
+                onClick={handleSend}
+                className={`bg-black text-white border border-white rounded-md px-4 py-2 text-sm hover:bg-white hover:text-black transition-colors flex items-center space-x-2 ${
+                  !isConnected && "opacity-50 cursor-not-allowed"
+                }`}
                 disabled={!isConnected}
               >
                 <Send className="w-4 h-4" />

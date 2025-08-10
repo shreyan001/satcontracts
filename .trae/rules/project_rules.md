@@ -1,0 +1,1 @@
+please use yarn and do not use npm, pnpm or any other package manager to run or install anything. Also know that yarn dev might already be running even if you want to run and check, so first check localhost:3000 and if the page is not available then run your command
