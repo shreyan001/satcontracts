@@ -1,0 +1,20 @@
+[
+  {
+    "id": "testescrow-1755020860047",
+    "bytecode": "0x608060405234801561001057600080fd5b50",
+    "name": "TestEscrow",
+    "contractAddress": "0x1234567890123456789012345678901234567890",
+    "contractType": "ETH-to-NFT",
+    "abi": [],
+    "description": "Test escrow contract",
+    "partyA": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdef",
+    "deployedAt": "2025-08-12T17:47:40.047Z",
+    "partyASignatureStatus": true,
+    "partyBSignatureStatus": true,
+    "partyAAddress": "0x1234567890123456789012345678901234567890",
+    "partyBAddress": "0x83CDBbA8359aAc6a25ACb70eb67dcF0E5eB2c607",
+    "partyASignature": "test-signature",
+    "partyBSignature": "0xb6e6439bac8dafc4027c90feb389535054bae2973546c1315950f7c671ef88110f1975827f24346f3967a71308be889dad2f78350281f5803cca7920d97d5d0f1b",
+    "partyB": "0x83CDBbA8359aAc6a25ACb70eb67dcF0E5eB2c607"
+  }
+]

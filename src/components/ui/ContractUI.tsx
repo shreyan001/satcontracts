@@ -21,6 +21,7 @@ export function SmartContractDisplay({ contractCode }: { contractCode: string })
   const [isLoading, setIsLoading] = useState(false)
   const [closestContractIndex, setClosestContractIndex] = useState<number>(-1)
   const [closestContract, setClosestContract] = useState<any>(null)
+  const [contractId, setContractId] = useState<string>('')
 
   const handleCopy = () => {
     navigator.clipboard.writeText(contractCode)
@@ -99,8 +100,65 @@ export function SmartContractDisplay({ contractCode }: { contractCode: string })
       setDeployedAddress(hashaddress.contractAddress)
       setShowCode(false)
       setIsDeployed(true)
+      
+      // Save contract data to JSON storage
+      await saveContractData({
+        //@ts-ignore
+        contractAddress: hashaddress.contractAddress,
+        //@ts-ignore
+        transactionHash: hashaddress.transactionHash || '',
+        contractIndex: closestContractIndex
+      })
     }
     setIsLoading(false)
+  }
+  
+  const saveContractData = async (deploymentData: any) => {
+    try {
+      if (!closestContract || !walletAddress) return
+      
+      const contractData = {
+        name: closestContract.name || 'ReusableEscrow',
+        contractAddress: deploymentData.contractAddress,
+        abi: closestContract.abi,
+        bytecode: closestContract.bytecode,
+        contractType: getContractType(closestContract.name),
+        partyA: walletAddress,
+        transactionHash: deploymentData.transactionHash,
+        networkId: 'citrea-testnet',
+        description: getContractDescription(closestContract.name)
+      }
+      
+      const response = await fetch('/api/contracts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(contractData)
+      })
+      
+      if (response.ok) {
+         const result = await response.json()
+         setContractId(result.contract.id)
+         console.log('Contract data saved:', result.contract.id)
+       }
+    } catch (error) {
+      console.error('Error saving contract data:', error)
+    }
+  }
+  
+  const getContractType = (contractName: string): string => {
+    if (contractName.includes('NFT')) return 'ETH-to-NFT'
+    if (contractName.includes('ERC20')) return 'ETH-to-ERC20'
+    if (contractName.includes('BTC')) return 'BTC-to-NFT'
+    return 'General Escrow'
+  }
+  
+  const getContractDescription = (contractName: string): string => {
+    if (contractName.includes('NFT')) return 'Secure peer-to-peer exchange between ETH and NFTs'
+    if (contractName.includes('ERC20')) return 'Secure peer-to-peer exchange between ETH and ERC20 tokens'
+    if (contractName.includes('BTC')) return 'Secure peer-to-peer exchange between BTC and NFTs'
+    return 'General purpose escrow contract'
   }
 
   const toggleCode = () => {
@@ -143,11 +201,18 @@ export function SmartContractDisplay({ contractCode }: { contractCode: string })
           {deployedAddress}
         </span>
       </p>
-      <div className="mt-4">
-        <p className="text-sm text-gray-300 mt-2 mb-2">Audit your deployed contract to get a detailed report:</p>
-        <Button onClick={() => window.open(`https://explorer.testnet.citrea.xyz/address/${deployedAddress}`, '_blank')} className="bg-[#d47615] text-black rounded-none hover:bg-[#d47615]/80 transition-colors duration-200">
-          check on explorer
-        </Button>
+      <div className="mt-4 space-y-2">
+        <p className="text-sm text-gray-300 mt-2 mb-2">Manage your deployed contract:</p>
+        <div className="flex gap-2 flex-wrap">
+          <Button onClick={() => window.open(`https://explorer.testnet.citrea.xyz/address/${deployedAddress}`, '_blank')} className="bg-[#d47615] text-black rounded-none hover:bg-[#d47615]/80 transition-colors duration-200">
+            Check on Explorer
+          </Button>
+          {contractId && (
+            <Button onClick={() => window.open(`/contract/${contractId}`, '_blank')} className="bg-green-600 text-white rounded-none hover:bg-green-700 transition-colors duration-200">
+              Open Contract Page
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   </div>
