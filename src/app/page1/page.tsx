@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useWalletClient, useAccount } from 'wagmi';
 import { publicClient } from '@/walletConnect/siwe';
 import { Button } from '@/components/ui/button';
-import { Copy, Check, Play, Code } from 'lucide-react';
+import { Copy, Check, Play, Code, AlertTriangle } from 'lucide-react';
 import ConnectButton from '@/components/ui/walletButton';
 
 export default function ContractPage() {
@@ -18,6 +18,10 @@ export default function ContractPage() {
   const [compilationError, setCompilationError] = useState<string>('');
   const [contractABI, setContractABI] = useState<any[]>([]);
   const [contractBytecode, setContractBytecode] = useState<string>('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
+  const [verificationError, setVerificationError] = useState<string>('');
+  const [verificationResult, setVerificationResult] = useState<any>(null);
   const { data: walletClient } = useWalletClient();
   const { address: walletAddress, isConnected } = useAccount();
 
@@ -157,6 +161,63 @@ contract SimpleStorage {
     return gasEstimate.toLocaleString();
   };
 
+  const verifyContract = async (contractAddress: string, sourceCode: string) => {
+    try {
+      setIsVerifying(true);
+      setVerificationStatus('verifying');
+      setVerificationError('');
+      setVerificationResult(null);
+
+      // Extract contract name from source code
+      const contractNameMatch = sourceCode.match(/contract\s+(\w+)/);
+      const contractName = contractNameMatch ? contractNameMatch[1] : 'Contract';
+
+      // Prepare verification data for Blockscout API
+      const verificationData = {
+        addressHash: contractAddress,
+        name: contractName,
+        compilerVersion: 'v0.8.0+commit.c7dfd78e', // Default Solidity version
+        optimization: false,
+        contractSourceCode: sourceCode
+      };
+
+      console.log('Verifying contract with data:', verificationData);
+
+      // Use our backend API route to avoid CORS issues
+      const response = await fetch('/api/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(verificationData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Verification failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Verification response:', result);
+
+      setVerificationResult({
+        ...result.result,
+        blockscoutUrl: result.blockscoutUrl
+      });
+      setVerificationStatus('success');
+      console.log('Contract verified successfully:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('Error verifying contract:', error);
+      setVerificationStatus('error');
+      setVerificationError(error instanceof Error ? error.message : 'Unknown verification error');
+      throw error;
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const deployContract = async () => {
     try {
       if (!walletClient || !walletAddress) {
@@ -196,6 +257,16 @@ contract SimpleStorage {
         console.log('Contract deployed at:', receipt.contractAddress);
         setDeployedAddress(receipt.contractAddress || '');
         setIsDeployed(true);
+        
+        // Automatically verify contract after deployment
+        if (receipt.contractAddress) {
+          try {
+            await verifyContract(receipt.contractAddress, contractCode);
+          } catch (verificationError) {
+            console.warn('Contract deployed but verification failed:', verificationError);
+            // Don't fail the deployment if verification fails
+          }
+        }
       }
     } catch (error) {
       console.error('Error deploying contract:', error);
@@ -392,11 +463,70 @@ contract SimpleStorage {
           {isDeployed && deployedAddress && (
             <div className="bg-green-900/30 border border-green-500 rounded-lg p-4">
               <h3 className="text-green-400 font-semibold mb-2">✅ Contract Deployed!</h3>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 mb-3">
                 <span className="text-gray-300 text-sm">Address:</span>
                 <code className="bg-black/30 px-2 py-1 rounded text-green-400 text-sm font-mono">
                   {deployedAddress}
                 </code>
+              </div>
+              
+              {/* Verification Status */}
+              <div className="mt-3 p-3 bg-gray-800/50 rounded border border-gray-600">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-medium text-gray-300">Verification Status:</span>
+                  {verificationStatus === 'verifying' && (
+                    <div className="flex items-center gap-1">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-400"></div>
+                      <span className="text-sm text-green-400">Verifying...</span>
+                    </div>
+                  )}
+                  {verificationStatus === 'success' && (
+                    <div className="flex items-center gap-1">
+                      <Check className="w-4 h-4 text-green-400" />
+                      <span className="text-sm text-green-400">Verified</span>
+                    </div>
+                  )}
+                  {verificationStatus === 'error' && (
+                    <div className="flex items-center gap-1">
+                      <AlertTriangle className="w-4 h-4 text-red-400" />
+                      <span className="text-sm text-red-400">Failed</span>
+                    </div>
+                  )}
+                  {verificationStatus === 'idle' && (
+                    <span className="text-sm text-gray-500">Not verified</span>
+                  )}
+                </div>
+                
+                {verificationError && (
+                  <p className="text-xs text-red-400 mt-1">{verificationError}</p>
+                )}
+                
+                {verificationResult && verificationStatus === 'success' && (
+                  <div className="mt-2">
+                    <p className="text-xs text-green-400">Contract source code verified on Blockscout</p>
+                    <a 
+                      href={`https://citrea-testnet.blockscout.com/address/${deployedAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-400 hover:text-blue-300 underline"
+                    >
+                      View on Blockscout →
+                    </a>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2 mt-3">
+                {verificationStatus !== 'success' && verificationStatus !== 'verifying' && (
+                  <Button
+                    size="sm"
+                    onClick={() => verifyContract(deployedAddress, contractCode)}
+                    disabled={isVerifying}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    {isVerifying ? 'Verifying...' : 'Verify Contract'}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"

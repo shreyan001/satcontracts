@@ -73,7 +73,7 @@ type Asset = {
 
     return (
       <div className="w-[90%] bg-black text-white font-mono p-3 rounded-lg border border-[#d47615]">
-        <h2 className="text-xl font-bold mb-3 text-[#d47615]">Agent Resources</h2>
+        <h2 className="text-xl font-bold mb-3 text-[#d47615]">My Portfolio</h2>
         <div className="mb-4 bg-gray-900 p-3 rounded-lg">
           <div className="grid grid-cols-3 gap-2 text-sm">
             <div>

@@ -1,0 +1,164 @@
+{
+  "test_cases": [
+    {
+      "id": "cbtc_to_erc20",
+      "category": "escrow",
+      "description": "CBTC to ERC20 token exchange",
+      "input": "I want to create an escrow contract to trade 0.5 CBTC for 1000 USDT tokens on Citrea",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "CBTC2ERC20Escrow"
+    },
+    {
+      "id": "nft_to_cbtc",
+      "category": "escrow",
+      "description": "NFT to CBTC trading",
+      "input": "I need to sell my NFT for 2 CBTC with automated verification",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "NFT2CBTCEscrow"
+    },
+
+    {
+      "id": "nft_to_btc",
+      "category": "escrow",
+      "description": "NFT to BTC cross-chain exchange",
+      "input": "I want to trade my rare NFT for 0.1 BTC with cross-chain verification",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "NFT2BTCEscrow"
+    },
+
+    {
+      "id": "social_wager_sports",
+      "category": "escrow",
+      "description": "Social wager for sports betting",
+      "input": "Create a bet contract where I wager 100 USDT that Team A will win against Team B",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "SocialWagerEscrow"
+    },
+    {
+      "id": "social_wager_prediction",
+      "category": "escrow",
+      "description": "Social wager for price prediction",
+      "input": "I want to bet 0.1 CBTC that Bitcoin price will reach $100k by end of year",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "PredictionWagerEscrow"
+    },
+    {
+      "id": "multi_party_assembly",
+      "category": "escrow",
+      "description": "Complex multi-party agreement",
+      "input": "Create an assembly contract for 5 parties to pool funds for a group purchase",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "MultiPartyAssemblyEscrow"
+    },
+    {
+      "id": "time_based_escrow",
+      "category": "escrow",
+      "description": "Conditional escrow with time trigger",
+      "input": "Set up a rental agreement where payment is released after 30 days",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "TimeBased EscrowContract"
+    },
+    {
+      "id": "game_key_escrow",
+      "category": "escrow",
+      "description": "Game key trading escrow",
+      "input": "I want to sell my Steam game key for 50 USDT with buyer protection",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "GameKeyEscrow"
+    },
+    {
+      "id": "saas_subscription",
+      "category": "escrow",
+      "description": "SaaS subscription escrow",
+      "input": "Create a contract for monthly SaaS payment of 100 USDT with service guarantees",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "SaaSSubscriptionEscrow"
+    },
+    {
+      "id": "domain_lease",
+      "category": "escrow",
+      "description": "Domain lease agreement",
+      "input": "Set up a 1-year domain lease for 500 USDT with automatic renewal option",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "DomainLeaseEscrow"
+    },
+    {
+      "id": "bounty_contract",
+      "category": "escrow",
+      "description": "Bounty reward escrow",
+      "input": "Create a bounty of 1000 USDT for completing a coding task",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "BountyEscrow"
+    },
+    {
+      "id": "equipment_rental",
+      "category": "escrow",
+      "description": "Equipment rental escrow",
+      "input": "Rent camera equipment for 200 USDT per week with damage deposit",
+      "expected_operation": "escrow_Node",
+      "expected_contract_type": "EquipmentRentalEscrow"
+    },
+    {
+      "id": "contribution_test",
+      "category": "contribution",
+      "description": "Error reporting test",
+      "input": "I found a bug in the contract compilation system",
+      "expected_operation": "contribute_node",
+      "expected_response": "contribution_received"
+    },
+    {
+      "id": "code_contribution",
+      "category": "contribution",
+      "description": "Code contribution test",
+      "input": "I want to contribute a new feature for multi-signature escrows",
+      "expected_operation": "contribute_node",
+      "expected_response": "contribution_received"
+    },
+    {
+      "id": "unknown_query",
+      "category": "unknown",
+      "description": "Unrelated query test",
+      "input": "What's the weather like today?",
+      "expected_operation": "unknown",
+      "expected_response": "conversational_fallback"
+    },
+    {
+      "id": "general_info",
+      "category": "unknown",
+      "description": "General platform information",
+      "input": "Tell me about SatContracts platform",
+      "expected_operation": "unknown",
+      "expected_response": "platform_information"
+    }
+  ],
+  "test_metadata": {
+    "total_test_cases": 16,
+    "categories": {
+      "escrow": 12,
+      "contribution": 2,
+      "unknown": 2
+    },
+    "contract_types_covered": [
+      "CBTC2ERC20Escrow",
+      "NFT2CBTCEscrow",
+      "NFT2BTCEscrow",
+      "SocialWagerEscrow",
+      "PredictionWagerEscrow",
+      "MultiPartyAssemblyEscrow",
+      "TimeBasedEscrowContract",
+      "GameKeyEscrow",
+      "SaaSSubscriptionEscrow",
+      "DomainLeaseEscrow",
+      "BountyEscrow",
+      "EquipmentRentalEscrow"
+    ],
+    "new_features_tested": [
+      "Social wagering contracts",
+      "Assembly use cases",
+      "Time-based triggers",
+      "Multi-party agreements",
+      "Cross-chain verification",
+      "CBTC integration"
+    ]
+  }
+}

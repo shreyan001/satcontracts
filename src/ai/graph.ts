@@ -7,7 +7,7 @@ import { ChatGroq } from "@langchain/groq";
 import { systemPrompt } from "./contractTemplate";
 import { ChatOpenAI } from "@langchain/openai";
 import { fetchboxPrompt } from "./fetchbox"
-import { contractsArray } from "@/lib/contractCompile";
+import { contractsArray } from "@/lib/contractIndex";
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -41,23 +41,26 @@ export default function nodegraph() {
 
     // Initial Node: Routes user requests to the appropriate node
     graph.addNode("initial_node", async (state: guildState) => {
-        const SYSTEM_TEMPLATE = `You are an AI agent for SatContracts, a revolutionary platform that transforms human chat into structured smart contracts. SatContracts creates programmable escrow agreements for digital goods, services, rentals, and micro-loans.
+        const SYSTEM_TEMPLATE = `You are an AI agent for SatContracts, a revolutionary platform that transforms human chat into structured smart contracts. SatContracts creates programmable escrow agreements for digital goods, services, rentals, micro-loans, and social wagering.
 
 Currently, SatContracts supports:
-- ETH to ERC20 token exchanges with secure escrow
-- NFT to ETH trading with automated verification
-- NFT to ERC20 token swaps with smart contract protection
-- NFT to NFT exchanges with trustless execution
-- ERC20 to ERC20 token trading with escrow security
-- Multi-asset escrow agreements with programmable conditions
+- CBTC to ERC20 token exchanges with secure escrow on Citrea zkRollup
+- NFT to CBTC trading with automated verification and Bitcoin collateral
+- Social wager contracts for betting, predictions, and competitive agreements
+- Multi-party escrow agreements with programmable conditions
+- Time-based and event-based conditional escrows
 
-Future possibilities include:
-- Bitcoin-native escrow agreements on Citrea zkRollup
+Expanded capabilities for hackathon demonstration:
+- Bitcoin-native escrow agreements leveraging Citrea's zkRollup technology
+- Social wagering platform with trustless bet resolution and automated payouts
+- Cross-chain asset exchanges between Bitcoin and Ethereum ecosystems
 - Micro-escrows for trades, rentals, and gig work using Bitcoin as collateral
-- Collateral-based agreements with BTC as security bonds
+- Collateral-based agreements with CBTC as security bonds
 - Trustless deals validated by APIs and browser agents
 - Templates for game keys, SaaS subscriptions, domain leases, gift cards, bounties, and equipment rentals
 - Making unused Bitcoin productive as programmable collateral for real-world agreements
+- ARC-20 token integration for Bitcoin-based token economies
+- Complex assembly contracts for multi-step transactions and conditional logic
 
 Based on the user's input, respond with ONLY ONE of the following words:
 - "contribute_node" if the user wants to report any errors or contribute to the project
@@ -198,7 +201,7 @@ Respond strictly with ONLY ONE of these words: "contribute_node", "escrow_Node",
     graph.addNode("escrow_node", async (state: guildState) => {
         console.log("Generating Escrow contract");
 
-     // Ensure this is a string
+        // Ensure this is a string
         const FetchboxPrompt = ChatPromptTemplate.fromMessages([
             ["system", fetchboxPrompt],
             ["human", "{input}"]
@@ -215,51 +218,25 @@ Respond strictly with ONLY ONE of these words: "contribute_node", "escrow_Node",
         }
         
         if (typeof index === 'number' && !isNaN(index)) {
-            context = contractsArray[index].contractCode;
+            context = contractsArray[index].contract_code;
         } else {
             context = index;
         }
 
-        const escrowPrompt = ChatPromptTemplate.fromMessages([
-            ["system", systemPrompt],
-            new MessagesPlaceholder({ variableName: "chat_history", optional: true }),
-            ["human", "{input}"]
-        ]);
-
-        try {
-            const response = await escrowPrompt.pipe(new ChatGroq({
-                modelName: "llama3-8b-8192",
-                temperature: 0.9,
-                apiKey: process.env.NEXT_PUBLIC_GROQ_API_KEY,
-            })).invoke({ 
-                input: state.input, 
-                chat_history: state.chatHistory,
-                context: context
-            });
-
-            const content = response.content as string;
-
-            const match = content.match(/```solidity[\s\S]*?```/); // Updated regex to match the 'solidity' language specifier
-            let contractData = null;
-            let resultData = content;
-
-            if (match) {
-                // Remove the backticks and 'solidity' language specifier
-                contractData = match[0].replace(/```solidity\s?|\s?```/g, '').trim();
-                // Remove the contract code from the result
-                resultData = content.replace(match[0], '').trim();
-            }
-
-            return { 
-                contractData: contractData,
-                result: resultData,
-                messages: [content] 
+        // Directly return the contract without AI processing
+        if (typeof index === 'number' && !isNaN(index) && contractsArray[index]) {
+            const selectedContract = contractsArray[index];
+            const contractExplanation = `## ${selectedContract.name}\n\n**Description:** ${selectedContract.description}\n\n**Category:** ${selectedContract.category}\n\nThis contract provides secure escrow functionality for peer-to-peer transactions. Below is the complete smart contract code:`;
+            
+            return {
+                contractData: selectedContract.contract_code,
+                result: contractExplanation,
+                messages: [contractExplanation]
             };
-        } catch (error) {
-            console.error("Error in escrow_node:", error);
-            return { 
-                result: "Error generating Escrow contract", 
-                messages: ["I apologize, but there was an error generating the Escrow contract. Please try again or provide more information about your requirements."]
+        } else {
+            return {
+                result: "Welcome to SatContracts! I can help you create secure escrow contracts on Citrea.",
+                messages: ["I specialize in creating escrow contracts for various asset exchanges like CBTC to NFT, NFT to ERC20, NFT to NFT, and ERC20 to ERC20 transfers. What type of escrow would you like to set up?"]
             };
         }
     });

@@ -10,7 +10,7 @@ This is a reusable escrow contract for NFT transactions. It allows buyers and se
 5. Claiming excess deposits
 
 Give instructions on how to use the contract like a short summary.
-
+.
 Give out the smart contract code below dont change anything.
 <context>
 {context}

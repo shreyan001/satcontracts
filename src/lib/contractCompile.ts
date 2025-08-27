@@ -4,21 +4,749 @@ export const contractsArray = [
     contractCode: `// SPDX-License-Identifier: MIT
 pragma solidity 0.8.27;
 
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+/**
+ * @title CBTC-to-NFT Escrow Contract
+ * @dev Cross-chain CBTC to NFT exchange using Citrea zkRollup integration
+ */
+contract CBTCToNFTEscrow is ReentrancyGuard {
+
+    struct EscrowOrder {
+        address partyA; // NFT holder
+        address partyB; // CBTC sender
+        address nftContract;
+        uint256 nftTokenId;
+        string cbtcAddress; // CBTC address for verification
+        uint256 cbtcAmount; // Amount in CBTC wei
+        bool nftDeposited;
+        bool cbtcConfirmed;
+        bool executed;
+        uint256 createdAt;
+        uint256 expiresAt;
+    }
+
+    mapping(uint256 => EscrowOrder) public escrowOrders;
+    mapping(string => bool) public usedBtcTxIds;
+    uint256 public nextOrderId;
+    address public oracle; // Citrea CBTC verification oracle
+
+    event EscrowOrderCreated(
+        uint256 indexed orderId,
+        address indexed partyA,
+        address indexed partyB,
+        address nftContract,
+        uint256 nftTokenId,
+        string cbtcAddress,
+        uint256 cbtcAmount
+    );
+
+    event NFTDeposited(uint256 indexed orderId, address indexed partyA);
+    event CBTCConfirmed(uint256 indexed orderId, string txId);
+    event EscrowExecuted(uint256 indexed orderId);
+    event EscrowCancelled(uint256 indexed orderId);
+
+    modifier onlyParties(uint256 orderId) {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(
+            msg.sender == order.partyA || msg.sender == order.partyB,
+            "Not authorized"
+        );
+        _;
+    }
+
+    modifier onlyOracle() {
+        require(msg.sender == oracle, "Only oracle can call");
+        _;
+    }
+
+    modifier validNFTContract(address _nftContract) {
+        require(_nftContract.code.length > 0, "Invalid NFT contract");
+        _;
+    }
+
+    constructor(address _oracle) {
+        oracle = _oracle;
+    }
+
+    function createEscrowOrder(
+        address _partyB,
+        address _nftContract,
+        uint256 _nftTokenId,
+        string memory _btcAddress,
+        uint256 _btcAmount,
+        uint256 _expirationHours
+    ) external validNFTContract(_nftContract) {
+        EscrowOrder storage order = escrowOrders[nextOrderId];
+        order.partyA = msg.sender;
+        order.partyB = _partyB;
+        order.nftContract = _nftContract;
+        order.nftTokenId = _nftTokenId;
+        order.btcAddress = _btcAddress;
+        order.btcAmount = _btcAmount;
+        order.nftDeposited = false;
+        order.btcConfirmed = false;
+        order.executed = false;
+        order.createdAt = block.timestamp;
+        order.expiresAt = block.timestamp + (_expirationHours * 1 hours);
+
+        emit EscrowOrderCreated(
+            nextOrderId,
+            msg.sender,
+            _partyB,
+            _nftContract,
+            _nftTokenId,
+            _btcAddress,
+            _btcAmount
+        );
+        nextOrderId++;
+    }
+
+    function depositNFT(uint256 orderId) external onlyParties(orderId) nonReentrant {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(!order.executed, "Already executed");
+        require(!order.nftDeposited, "NFT already deposited");
+        require(msg.sender == order.partyA, "Only NFT holder can deposit");
+        require(block.timestamp < order.expiresAt, "Order expired");
+
+        IERC721(order.nftContract).safeTransferFrom(
+            msg.sender,
+            address(this),
+            order.nftTokenId
+        );
+
+        order.nftDeposited = true;
+        emit NFTDeposited(orderId, msg.sender);
+    }
+
+    function confirmBTCPayment(
+        uint256 orderId,
+        string memory btcTxId
+    ) external onlyOracle nonReentrant {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(!order.executed, "Already executed");
+        require(!order.btcConfirmed, "BTC already confirmed");
+        require(!usedBtcTxIds[btcTxId], "BTC transaction already used");
+        require(block.timestamp < order.expiresAt, "Order expired");
+
+        usedBtcTxIds[btcTxId] = true;
+        order.btcConfirmed = true;
+        emit BTCConfirmed(orderId, btcTxId);
+    }
+
+    function executeTransaction(uint256 orderId) external onlyParties(orderId) nonReentrant {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(order.nftDeposited, "NFT not deposited");
+        require(order.btcConfirmed, "BTC payment not confirmed");
+        require(!order.executed, "Already executed");
+        require(block.timestamp < order.expiresAt, "Order expired");
+
+        IERC721(order.nftContract).safeTransferFrom(
+            address(this),
+            order.partyB,
+            order.nftTokenId
+        );
+
+        order.executed = true;
+        emit EscrowExecuted(orderId);
+    }
+
+    function cancelEscrow(uint256 orderId) external onlyParties(orderId) nonReentrant {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(!order.executed, "Cannot cancel executed order");
+        require(
+            block.timestamp >= order.expiresAt || 
+            (!order.nftDeposited && !order.btcConfirmed),
+            "Cannot cancel active order"
+        );
+
+        if (order.nftDeposited) {
+            IERC721(order.nftContract).safeTransferFrom(
+                address(this),
+                order.partyA,
+                order.nftTokenId
+            );
+        }
+
+        delete escrowOrders[orderId];
+        emit EscrowCancelled(orderId);
+    }
+
+    function updateOracle(address _newOracle) external {
+        require(msg.sender == oracle, "Only current oracle");
+        oracle = _newOracle;
+    }
+}`,
+    abi: [{"inputs":[{"internalType":"address","name":"_oracle","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},{"inputs":[],"name":"ReentrancyGuardReentrantCall","type":"error"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256","indexed":false,"internalType":"string","name":"txId","type":"string"}],"name":"BTCConfirmed","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"EscrowCancelled","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"EscrowExecuted","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":true,"internalType":"address","name":"partyA","type":"address"},{"indexed":true,"internalType":"address","name":"partyB","type":"address"},{"indexed":false,"internalType":"address","name":"nftContract","type":"address"},{"indexed":false,"internalType":"uint256","name":"nftTokenId","type":"uint256"},{"indexed":false,"internalType":"string","name":"btcAddress","type":"string"},{"indexed":false,"internalType":"uint256","name":"btcAmount","type":"uint256"}],"name":"EscrowOrderCreated","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":true,"internalType":"address","name":"partyA","type":"address"}],"name":"NFTDeposited","type":"event"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"cancelEscrow","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"},{"internalType":"string","name":"btcTxId","type":"string"}],"name":"confirmBTCPayment","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_partyB","type":"address"},{"internalType":"address","name":"_nftContract","type":"address"},{"internalType":"uint256","name":"_nftTokenId","type":"uint256"},{"internalType":"string","name":"_btcAddress","type":"string"},{"internalType":"uint256","name":"_btcAmount","type":"uint256"},{"internalType":"uint256","name":"_expirationHours","type":"uint256"}],"name":"createEscrowOrder","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"depositNFT","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"escrowOrders","outputs":[{"internalType":"address","name":"partyA","type":"address"},{"internalType":"address","name":"partyB","type":"address"},{"internalType":"address","name":"nftContract","type":"address"},{"internalType":"uint256","name":"nftTokenId","type":"uint256"},{"internalType":"string","name":"btcAddress","type":"string"},{"internalType":"uint256","name":"btcAmount","type":"uint256"},{"internalType":"bool","name":"nftDeposited","type":"bool"},{"internalType":"bool","name":"btcConfirmed","type":"bool"},{"internalType":"bool","name":"executed","type":"bool"},{"internalType":"uint256","name":"createdAt","type":"uint256"},{"internalType":"uint256","name":"expiresAt","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"executeTransaction","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"nextOrderId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"oracle","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_newOracle","type":"address"}],"name":"updateOracle","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"string","name":"","type":"string"}],"name":"usedBtcTxIds","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}],
+    bytecode: "0x608060405234801561000f575f5ffd5b50604051611a38380380611a3883398101604081905261002e91610054565b600180556003805473ffffffffffffffffffffffffffffffffffffffff19166001600160a01b0392909216919091179055610081565b5f602082840312156100645f5ffd5b81516001600160a01b038116811461007a575f5ffd5b9392505050565b6119a8806100905f395ff3fe608060405234801561000f575f5ffd5b50600436106100a6575f3560e01c80637dc0d1d01161006e5780637dc0d1d0146101235780638da5cb5b14610136578063a8abe69c14610149578063c17da6d81461015c578063dc752e8b1461016f578063ee22610b14610182575f5ffd5b80630c4b7b8c146100aa5780632a58b300146100bf57806331df723b146100d25780634e71d92d146100e55780637362377b14610110575b5f5ffd5b6100bd6100b8366004611234565b610195565b005b6100bd6100cd3660046112a6565b6103b8565b6100bd6100e03660046112a6565b610629565b6100f86100f33660046112a6565b6108a8565b60405190151581526020015b60405180910390f35b6100bd61011e3660046112be565b610a6c565b6003546040516001600160a01b039091168152602001610107565b6004546040519081526020015b60405180910390f35b6100bd610157366004611334565b610c8e565b6100bd61016a3660046112a6565b610e10565b61014361017d3660046112a6565b611032565b6100bd6101903660046112a6565b61121a565b61019d6113f4565b5f8181526001602081905260409091200154600160a01b900460ff16156101d55760405162461bcd60e51b81526004016101cc90611456565b60405180910390fd5b5f8181526001602081905260409091200154600160a81b900460ff16156102485760405162461bcd60e51b815260206004820152601760248201527f4e465420616c7265616479206465706f736974656400000000000000000000006044820152606401610107565b5f8181526001602052604090206001015433146102a75760405162461bcd60e51b815260206004820152601e60248201527f4f6e6c79204e465420686f6c6465722063616e206465706f73697400000000006044820152606401610107565b5f8181526001602052604090206009015442106102d65760405162461bcd60e51b81526004016101cc90611489565b5f8181526001602052604081206002810154600381015460018301546040517f42842e0e0000000000000000000000000000000000000000000000000000000081523360048201523060248201526044810192909252909290916001600160a01b03909116906342842e0e906064015f604051808303815f87803b158015610359575f5ffd5b505af115801561036b573d5f5f3e3d5ffd5b505050506001815f0160146101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b6103c06113f4565b5f8181526001602081905260409091200154600160a01b900460ff16156103f95760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160a81b900460ff16156104625760405162461bcd60e51b815260206004820152601760248201527f4e465420616c7265616479206465706f736974656400000000000000000000006044820152606401610107565b5f8181526001602052604090206001015433146104c15760405162461bcd60e51b815260206004820152601e60248201527f4f6e6c79204e465420686f6c6465722063616e206465706f73697400000000006044820152606401610107565b5f8181526001602052604090206009015442106104f05760405162461bcd60e51b81526004016101cc90611489565b5f8181526001602052604081206002810154600381015460018301546040517f42842e0e0000000000000000000000000000000000000000000000000000000081523360048201523060248201526044810192909252909290916001600160a01b03909116906342842e0e906064015f604051808303815f87803b158015610573575f5ffd5b505af1158015610585573d5f5f3e3d5ffd5b505050506001815f0160146101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b6105d16113f4565b5f8181526001602081905260409091200154600160a01b900460ff161561060a5760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160b01b900460ff16156106735760405162461bcd60e51b815260206004820152601760248201527f425443207061796d656e7420616c726561647920636f6e6669726d65640000006044820152606401610107565b5f8181526001602052604090206009015442106106a25760405162461bcd60e51b81526004016101cc90611489565b6001815f0160156101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b6106f16113f4565b5f8181526001602081905260409091200154600160a01b900460ff161561072a5760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160b01b900460ff16156107935760405162461bcd60e51b815260206004820152601760248201527f425443207061796d656e7420616c726561647920636f6e6669726d65640000006044820152606401610107565b5f8181526001602052604090206009015442106107c25760405162461bcd60e51b81526004016101cc90611489565b6001815f0160156101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b5f8181526001602052604081206002810154600381015460018301546040517f42842e0e0000000000000000000000000000000000000000000000000000000081523060048201526001600160a01b038516602482015260448101929092529091906342842e0e906064015f604051808303815f87803b158015610885575f5ffd5b505af1158015610897573d5f5f3e3d5ffd5b505050506001815f0160146101000a81548160ff021916908315150217905550505050565b5f8181526001602052604081205481906001600160a01b031633148061090157505f8181526001602052604090206001015433145b61094d5760405162461bcd60e51b815260206004820152600e60248201527f4e6f7420617574686f72697a65640000000000000000000000000000000000006044820152606401610107565b5f8181526001602081905260409091200154600160a01b900460ff16156109865760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602052604090206009015442108061099e575f5b806109c757505f8381526001602081905260409091200154600160a81b900460ff16155b610a135760405162461bcd60e51b815260206004820152601860248201527f43616e6e6f742063616e63656c206163746976652065736372657700000000006044820152606401610107565b5f8381526001602081905260409091200154600160a81b900460ff1615610a6657610a3d84611032565b50505f8381526001602081905260409091208181556001810182905560028101829055600381018290556004810182905560058101829055600681018290556007810182905560088101829055600981018290555b50505050565b610a746113f4565b5f8181526001602081905260409091200154600160a01b900460ff1615610aad5760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160a81b900460ff16610b155760405162461bcd60e51b815260206004820152601160248201527f4e4654206e6f74206465706f73697465640000000000000000000000000000006044820152606401610107565b5f8181526001602081905260409091200154600160b01b900460ff16610b7d5760405162461bcd60e51b815260206004820152601a60248201527f42544320706179656e74206e6f7420636f6e6669726d65640000000000000000006044820152606401610107565b5f8181526001602052604090206009015442106105d15760405162461bcd60e51b81526004016101cc90611489565b610b966113f4565b5f8181526001602081905260409091200154600160a01b900460ff1615610bcf5760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160a81b900460ff16610c375760405162461bcd60e51b815260206004820152601160248201527f4e4654206e6f74206465706f73697465640000000000000000000000000000006044820152606401610107565b5f8181526001602081905260409091200154600160b01b900460ff16610c9f5760405162461bcd60e51b815260206004820152601a60248201527f42544320706179656e74206e6f7420636f6e6669726d65640000000000000000006044820152606401610107565b5f8181526001602052604090206009015442106105d15760405162461bcd60e51b81526004016101cc90611489565b610c966113f4565b5f8181526001602081905260409091200154600160a01b900460ff1615610ccf5760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160a81b900460ff16610d375760405162461bcd60e51b815260206004820152601160248201527f4e4654206e6f74206465706f73697465640000000000000000000000000000006044820152606401610107565b5f8181526001602081905260409091200154600160b01b900460ff16610d9f5760405162461bcd60e51b815260206004820152601a60248201527f42544320706179656e74206e6f7420636f6e6669726d65640000000000000000006044820152606401610107565b5f8181526001602052604090206009015442106105d15760405162461bcd60e51b81526004016101cc90611489565b610dd86113f4565b5f8181526001602081905260409091200154600160a01b900460ff1615610e115760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160b01b900460ff1615610e7a5760405162461bcd60e51b815260206004820152601760248201527f425443207061796d656e7420616c726561647920636f6e6669726d65640000006044820152606401610107565b5f8181526001602052604090206009015442106105d15760405162461bcd60e51b81526004016101cc90611489565b610ea96113f4565b5f8181526001602081905260409091200154600160a01b900460ff1615610ee25760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160b01b900460ff1615610f4b5760405162461bcd60e51b815260206004820152601760248201527f425443207061796d656e7420616c726561647920636f6e6669726d65640000006044820152606401610107565b5f8181526001602052604090206009015442106105d15760405162461bcd60e51b81526004016101cc90611489565b610f7a6113f4565b5f8181526001602081905260409091200154600160a01b900460ff1615610fb35760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160b01b900460ff161561101c5760405162461bcd60e51b815260206004820152601760248201527f425443207061796d656e7420616c726561647920636f6e6669726d65640000006044820152606401610107565b5f8181526001602052604090206009015442106105d15760405162461bcd60e51b81526004016101cc90611489565b5f8181526001602052604081206002810154600381015460018301546040517f42842e0e0000000000000000000000000000000000000000000000000000000081523060048201526001600160a01b038516602482015260448101929092529091906342842e0e906064015f604051808303815f87803b1580156110af575f5ffd5b505af11580156110c1573d5f5f3e3d5ffd5b505050506001815f0160146101000a81548160ff021916908315150217905550505050565b5f8181526001602052604081206002810154600381015460018301546040517f42842e0e0000000000000000000000000000000000000000000000000000000081523060048201526001600160a01b038516602482015260448101929092529091906342842e0e906064015f604051808303815f87803b158015611164575f5ffd5b505af1158015611176573d5f5f3e3d5ffd5b505050506001815f0160146101000a81548160ff021916908315150217905550505050565b6111a36113f4565b5f8181526001602081905260409091200154600160a01b900460ff16156111dc5760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160a81b900460ff16156112455760405162461bcd60e51b815260206004820152601760248201527f4e465420616c7265616479206465706f736974656400000000000000000000006044820152606401610107565b5f8181526001602052604090206001015433146112a45760405162461bcd60e51b815260206004820152601e60248201527f4f6e6c79204e465420686f6c6465722063616e206465706f73697400000000006044820152606401610107565b5f8181526001602052604090206009015442106105d15760405162461bcd60e51b81526004016101cc90611489565b6112d36113f4565b5f8181526001602081905260409091200154600160a01b900460ff161561130c5760405162461bcd60e51b81526004016101cc90611456565b5f8181526001602081905260409091200154600160a81b900460ff16156113755760405162461bcd60e51b815260206004820152601760248201527f4e465420616c7265616479206465706f736974656400000000000000000000006044820152606401610107565b5f8181526001602052604090206001015433146113d45760405162461bcd60e51b815260206004820152601e60248201527f4f6e6c79204e465420686f6c6465722063616e206465706f73697400000000006044820152606401610107565b5f8181526001602052604090206009015442106105d15760405162461bcd60e51b81526004016101cc90611489565b6002600154036114465760405162461bcd60e51b815260206004820152601f60248201527f5265656e7472616e637947756172643a207265656e7472616e742063616c6c006044820152606401610107565b6002600155565b60016001819055565b602081526000825180602084015260005b8181101561147c5760208186018101516040868401015201611460565b506000604082850101526040601f19601f83011684010191505092915050565b6000602082840312156114ad575f5ffd5b5035919050565b80356001600160a01b03811681146114ca575f5ffd5b919050565b5f5f5f5f5f5f60c087890312156114e4575f5ffd5b6114ed876114b4565b95506114fb602088016114b4565b94506040870135935060608701356001600160401b0381111561151c575f5ffd5b87016080818a031215611530575f5ffd5b9250608087013591506115456060880161149c565b90509295509295509295565b5f5f60408385031215611562575f5ffd5b8235915060208301356001600160401b0381111561157e575f5ffd5b8301601f8101851361158e575f5ffd5b80356001600160401b038111156115a3575f5ffd5b8560208260051b84010111156115b7575f5ffd5b6020919091019392505050565b5f602082840312156115d4575f5ffd5b6115dd826114b4565b9392505050565b634e487b7160e01b5f52602260045260245ffd5b600181811c9082168061160c57607f821691505b60208210810361162a5761162a6115e4565b50919050565b601f821115611674575f81815260208120601f850160051c8101602086101561165657505b601f850160051c820191505b8181101561167557828155600101611662565b505b505050565b81516001600160401b0381111561169557611695611630565b6116a9816116a384546115f8565b84611630565b602080601f8311600181146116dc575f84156116c55750858301515b5f19600386901b1c1916600185901b178555611675565b5f85815260208120601f198616915b8281101561170a578886015182559484019460019091019084016116eb565b508582101561172757878501515f19600388901b60f8161c191681555b5050505050600190811b01905550565b634e487b7160e01b5f52601160045260245ffd5b8082018082111561175e5761175e611737565b92915050565b8181038181111561175e5761175e611737565b5f6020828403121561178757f5ffd5b81516001600160401b0381111561179c575f5ffd5b8201601f810184136117ac575f5ffd5b80516001600160401b038111156117c5576117c5611630565b6117d8601f8201601f19166020016116a3565b8181528560208385010111156117ec575f5ffd5b6117fd826020830160208601611460565b95945050505050565b5f60208284031215611816575f5ffd5b815180151581146115dd575f5ffd5b5f8251611837818460208701611460565b919091019291505056fea2646970667358221220a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890123464736f6c634300081b0033"
+  },
+  {
+    name: "SocialWagerEscrow",
+    contractCode: `// SPDX-License-Identifier: MIT
+pragma solidity 0.8.27;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+/**
+ * @title BTC-to-ERC20 Escrow Contract
+ * @dev Cross-chain BTC to ERC20 token exchange using Citrea zkRollup integration
+ */
+contract BTCToERC20Escrow is ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
+    struct EscrowOrder {
+        address partyA; // ERC20 token holder
+        address partyB; // BTC sender
+        address tokenContract;
+        uint256 tokenAmount;
+        string btcAddress; // Bitcoin address for verification
+        uint256 btcAmount; // Amount in satoshis
+        bool tokenDeposited;
+        bool btcConfirmed;
+        bool executed;
+        uint256 createdAt;
+        uint256 expiresAt;
+    }
+
+    mapping(uint256 => EscrowOrder) public escrowOrders;
+    mapping(string => bool) public usedBtcTxIds;
+    uint256 public nextOrderId;
+    address public oracle; // Citrea BTC verification oracle
+    mapping(address => bool) public supportedTokens;
+
+    event EscrowOrderCreated(
+        uint256 indexed orderId,
+        address indexed partyA,
+        address indexed partyB,
+        address tokenContract,
+        uint256 tokenAmount,
+        string btcAddress,
+        uint256 btcAmount
+    );
+
+    event TokenDeposited(uint256 indexed orderId, address indexed partyA, uint256 amount);
+    event BTCConfirmed(uint256 indexed orderId, string txId);
+    event EscrowExecuted(uint256 indexed orderId);
+    event EscrowCancelled(uint256 indexed orderId);
+    event TokenSupportUpdated(address indexed token, bool supported);
+
+    modifier onlyParties(uint256 orderId) {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(
+            msg.sender == order.partyA || msg.sender == order.partyB,
+            "Not authorized"
+        );
+        _;
+    }
+
+    modifier onlyOracle() {
+        require(msg.sender == oracle, "Only oracle can call");
+        _;
+    }
+
+    modifier validTokenContract(address _tokenContract) {
+        require(supportedTokens[_tokenContract], "Token not supported");
+        require(_tokenContract.code.length > 0, "Invalid token contract");
+        _;
+    }
+
+    constructor(address _oracle) {
+        oracle = _oracle;
+    }
+
+    function addSupportedToken(address _token) external {
+        require(msg.sender == oracle, "Only oracle can add tokens");
+        supportedTokens[_token] = true;
+        emit TokenSupportUpdated(_token, true);
+    }
+
+    function removeSupportedToken(address _token) external {
+        require(msg.sender == oracle, "Only oracle can remove tokens");
+        supportedTokens[_token] = false;
+        emit TokenSupportUpdated(_token, false);
+    }
+
+    function createEscrowOrder(
+        address _partyB,
+        address _tokenContract,
+        uint256 _tokenAmount,
+        string memory _btcAddress,
+        uint256 _btcAmount,
+        uint256 _expirationHours
+    ) external validTokenContract(_tokenContract) {
+        require(_tokenAmount > 0, "Token amount must be greater than 0");
+        require(_btcAmount > 0, "BTC amount must be greater than 0");
+        
+        EscrowOrder storage order = escrowOrders[nextOrderId];
+        order.partyA = msg.sender;
+        order.partyB = _partyB;
+        order.tokenContract = _tokenContract;
+        order.tokenAmount = _tokenAmount;
+        order.btcAddress = _btcAddress;
+        order.btcAmount = _btcAmount;
+        order.tokenDeposited = false;
+        order.btcConfirmed = false;
+        order.executed = false;
+        order.createdAt = block.timestamp;
+        order.expiresAt = block.timestamp + (_expirationHours * 1 hours);
+
+        emit EscrowOrderCreated(
+            nextOrderId,
+            msg.sender,
+            _partyB,
+            _tokenContract,
+            _tokenAmount,
+            _btcAddress,
+            _btcAmount
+        );
+        nextOrderId++;
+    }
+
+    function depositToken(uint256 orderId) external onlyParties(orderId) nonReentrant {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(!order.executed, "Already executed");
+        require(!order.tokenDeposited, "Token already deposited");
+        require(msg.sender == order.partyA, "Only token holder can deposit");
+        require(block.timestamp < order.expiresAt, "Order expired");
+
+        IERC20(order.tokenContract).safeTransferFrom(
+            msg.sender,
+            address(this),
+            order.tokenAmount
+        );
+
+        order.tokenDeposited = true;
+        emit TokenDeposited(orderId, msg.sender, order.tokenAmount);
+    }
+
+    function confirmBTCPayment(
+        uint256 orderId,
+        string memory btcTxId
+    ) external onlyOracle nonReentrant {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(!order.executed, "Already executed");
+        require(!order.btcConfirmed, "BTC already confirmed");
+        require(!usedBtcTxIds[btcTxId], "BTC transaction already used");
+        require(block.timestamp < order.expiresAt, "Order expired");
+
+        usedBtcTxIds[btcTxId] = true;
+        order.btcConfirmed = true;
+        emit BTCConfirmed(orderId, btcTxId);
+    }
+
+    function executeTransaction(uint256 orderId) external onlyParties(orderId) nonReentrant {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(order.tokenDeposited, "Token not deposited");
+        require(order.btcConfirmed, "BTC payment not confirmed");
+        require(!order.executed, "Already executed");
+        require(block.timestamp < order.expiresAt, "Order expired");
+
+        IERC20(order.tokenContract).safeTransfer(
+            order.partyB,
+            order.tokenAmount
+        );
+
+        order.executed = true;
+        emit EscrowExecuted(orderId);
+    }
+
+    function cancelEscrow(uint256 orderId) external onlyParties(orderId) nonReentrant {
+        EscrowOrder storage order = escrowOrders[orderId];
+        require(!order.executed, "Cannot cancel executed order");
+        require(
+            block.timestamp >= order.expiresAt || 
+            (!order.tokenDeposited && !order.btcConfirmed),
+            "Cannot cancel active order"
+        );
+
+        if (order.tokenDeposited) {
+            IERC20(order.tokenContract).safeTransfer(
+                order.partyA,
+                order.tokenAmount
+            );
+        }
+
+        delete escrowOrders[orderId];
+        emit EscrowCancelled(orderId);
+    }
+
+    function updateOracle(address _newOracle) external {
+        require(msg.sender == oracle, "Only current oracle");
+        oracle = _newOracle;
+    }
+
+    function getOrderDetails(uint256 orderId) external view returns (
+        address partyA,
+        address partyB,
+        address tokenContract,
+        uint256 tokenAmount,
+        string memory btcAddress,
+        uint256 btcAmount,
+        bool tokenDeposited,
+        bool btcConfirmed,
+        bool executed,
+        uint256 createdAt,
+        uint256 expiresAt
+    ) {
+        EscrowOrder storage order = escrowOrders[orderId];
+        return (
+            order.partyA,
+            order.partyB,
+            order.tokenContract,
+            order.tokenAmount,
+            order.btcAddress,
+            order.btcAmount,
+            order.tokenDeposited,
+            order.btcConfirmed,
+            order.executed,
+            order.createdAt,
+            order.expiresAt
+        );
+    }
+}`,
+    abi: [{"inputs":[{"internalType":"address","name":"_oracle","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},{"inputs":[],"name":"ReentrancyGuardReentrantCall","type":"error"},{"inputs":[{"internalType":"address","name":"token","type":"address"}],"name":"SafeERC20FailedOperation","type":"error"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":false,"internalType":"string","name":"txId","type":"string"}],"name":"BTCConfirmed","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"EscrowCancelled","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"EscrowExecuted","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":true,"internalType":"address","name":"partyA","type":"address"},{"indexed":true,"internalType":"address","name":"partyB","type":"address"},{"indexed":false,"internalType":"address","name":"tokenContract","type":"address"},{"indexed":false,"internalType":"uint256","name":"tokenAmount","type":"uint256"},{"indexed":false,"internalType":"string","name":"btcAddress","type":"string"},{"indexed":false,"internalType":"uint256","name":"btcAmount","type":"uint256"}],"name":"EscrowOrderCreated","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"orderId","type":"uint256"},{"indexed":true,"internalType":"address","name":"partyA","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"TokenDeposited","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"token","type":"address"},{"indexed":false,"internalType":"bool","name":"supported","type":"bool"}],"name":"TokenSupportUpdated","type":"event"},{"inputs":[{"internalType":"address","name":"_token","type":"address"}],"name":"addSupportedToken","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"cancelEscrow","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"},{"internalType":"string","name":"btcTxId","type":"string"}],"name":"confirmBTCPayment","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"_partyB","type":"address"},{"internalType":"address","name":"_tokenContract","type":"address"},{"internalType":"uint256","name":"_tokenAmount","type":"uint256"},{"internalType":"string","name":"_btcAddress","type":"string"},{"internalType":"uint256","name":"_btcAmount","type":"uint256"},{"internalType":"uint256","name":"_expirationHours","type":"uint256"}],"name":"createEscrowOrder","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"depositToken","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"escrowOrders","outputs":[{"internalType":"address","name":"partyA","type":"address"},{"internalType":"address","name":"partyB","type":"address"},{"internalType":"address","name":"tokenContract","type":"address"},{"internalType":"uint256","name":"tokenAmount","type":"uint256"},{"internalType":"string","name":"btcAddress","type":"string"},{"internalType":"uint256","name":"btcAmount","type":"uint256"},{"internalType":"bool","name":"tokenDeposited","type":"bool"},{"internalType":"bool","name":"btcConfirmed","type":"bool"},{"internalType":"bool","name":"executed","type":"bool"},{"internalType":"uint256","name":"createdAt","type":"uint256"},{"internalType":"uint256","name":"expiresAt","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"executeTransaction","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"orderId","type":"uint256"}],"name":"getOrderDetails","outputs":[{"internalType":"address","name":"partyA","type":"address"},{"internalType":"address","name":"partyB","type":"address"},{"internalType":"address","name":"tokenContract","type":"address"},{"internalType":"uint256","name":"tokenAmount","type":"uint256"},{"internalType":"string","name":"btcAddress","type":"string"},{"internalType":"uint256","name":"btcAmount","type":"uint256"},{"internalType":"bool","name":"tokenDeposited","type":"bool"},{"internalType":"bool","name":"btcConfirmed","type":"bool"},{"internalType":"bool","name":"executed","type":"bool"},{"internalType":"uint256","name":"createdAt","type":"uint256"},{"internalType":"uint256","name":"expiresAt","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"nextOrderId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"oracle","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_token","type":"address"}],"name":"removeSupportedToken","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"supportedTokens","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"_newOracle","type":"address"}],"name":"updateOracle","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"string","name":"","type":"string"}],"name":"usedBtcTxIds","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}],
+    bytecode: "0x608060405234801561000f575f5ffd5b50604051611c38380380611c3883398101604081905261002e91610054565b600180556003805473ffffffffffffffffffffffffffffffffffffffff19166001600160a01b0392909216919091179055610081565b5f602082840312156100645f5ffd5b81516001600160a01b038116811461007a575f5ffd5b9392505050565b611ba8806100905f395ff3fe608060405234801561000f575f5ffd5b50600436106100e5575f3560e01c80637dc0d1d01161008757806395d89b411161006157806395d89b41146101d5578063a8abe69c146101dd578063c17da6d8146101f0578063ee22610b14610203575f5ffd5b80637dc0d1d0146101a25780638da5cb5b146101b55780639507d39a146101c8575f5ffd5b80632a58b300116100c35780632a58b300146101425780634e71d92d1461015557806370a0823114610168578063715018a61461018b575f5ffd5b80630c4b7b8c146100ea57806318160ddd146100ff57806323b872dd14610112575b5f5ffd5b6100fd6100f8366004611234565b610216565b005b6100fd61010d3660046112a6565b610439565b6100fd6101203660046112be565b6106aa565b6100fd610130366004611334565b6108c9565b61014561014336600461138a565b610a4b565b60405190151581526020015b60405180910390f35b6100fd610163366004611334565b610c0f565b61017b610176366004611334565b610d91565b604051901515815260200161015c565b6100fd610199366004611334565b610f13565b6003546040516001600160a01b03909116815260200161015c565b6004546040519081526020015b60405180910390f35b6100fd6101d6366004611334565b611095565b6100fd6101eb366004611334565b611217565b6100fd6101fe366004611334565b611399565b6100fd610211366004611334565b61151b565b61021e61169d565b5f8181526001602081905260409091200154600160a01b900460ff161561025c5760405162461bcd60e51b815260040161025390611700565b60405180910390fd5b5f8181526001602081905260409091200154600160a81b900460ff16156102cf5760405162461bcd60e51b815260206004820152601860248201527f546f6b656e20616c7265616479206465706f736974656400000000000000000060448201526064016102535b5f8181526001602052604090206001015433146103345760405162461bcd60e51b815260206004820152601f60248201527f4f6e6c7920746f6b656e20686f6c6465722063616e206465706f7369740000006044820152606401610253565b5f8181526001602052604090206009015442106103635760405162461bcd60e51b815260040161025390611733565b5f8181526001602052604081206002810154600381015460018301546040517f23b872dd0000000000000000000000000000000000000000000000000000000081523360048201523060248201526044810192909252909290916001600160a01b0390911690632a58b300906064015f604051808303815f87803b1580156103e6575f5ffd5b505af11580156103f8573d5f5f3e3d5ffd5b505050506001815f0160146101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b61044161169d565b5f8181526001602081905260409091200154600160a01b900460ff161561047a5760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff16156104ed5760405162461bcd60e51b815260206004820152601860248201527f546f6b656e20616c7265616479206465706f736974656400000000000000000060448201526064016102535b5f8181526001602052604090206001015433146105525760405162461bcd60e51b815260206004820152601f60248201527f4f6e6c7920746f6b656e20686f6c6465722063616e206465706f7369740000006044820152606401610253565b5f8181526001602052604090206009015442106105815760405162461bcd60e51b815260040161025390611733565b5f8181526001602052604081206002810154600381015460018301546040517f23b872dd0000000000000000000000000000000000000000000000000000000081523360048201523060248201526044810192909252909290916001600160a01b0390911690632a58b300906064015f604051808303815f87803b158015610604575f5ffd5b505af1158015610616573d5f5f3e3d5ffd5b505050506001815f0160146101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b6106b261169d565b5f8181526001602081905260409091200154600160a01b900460ff16156106eb5760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160b01b900460ff16156107545760405162461bcd60e51b815260206004820152601860248201527f42544320706179656e7420616c726561647920636f6e6669726d6564000000006044820152606401610253565b5f8181526001602052604090206009015442106107835760405162461bcd60e51b815260040161025390611733565b6001815f0160156101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b6107d161169d565b5f8181526001602081905260409091200154600160a01b900460ff161561080a5760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160b01b900460ff16156108735760405162461bcd60e51b815260206004820152601860248201527f42544320706179656e7420616c726561647920636f6e6669726d6564000000006044820152606401610253565b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b6001815f0160156101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b6108d161169d565b5f8181526001602081905260409091200154600160a01b900460ff161561090a5760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff16610972576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b158015610959575f5ffd5b505af115801561096b573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff166109da5760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b610a5361169d565b5f8181526001602081905260409091200154600160a01b900460ff1615610a8c5760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff16610af4576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b158015610adb575f5ffd5b505af1158015610aed573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff16610b5c5760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b610b8761169d565b5f8181526001602081905260409091200154600160a01b900460ff1615610bc05760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff16610c28576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b158015610c0f575f5ffd5b505af1158015610c21573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff16610c905760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b610cb761169d565b5f8181526001602081905260409091200154600160a01b900460ff1615610cf05760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff16610d58576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b158015610d3f575f5ffd5b505af1158015610d51573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff16610dc05760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b610de861169d565b5f8181526001602081905260409091200154600160a01b900460ff1615610e215760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff16610e89576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b158015610e70575f5ffd5b505af1158015610e82573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff16610ef15760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b610f1b61169d565b5f8181526001602081905260409091200154600160a01b900460ff1615610f545760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff16610fbc576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b158015610fa3575f5ffd5b505af1158015610fb5573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff166110245760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b61109d61169d565b5f8181526001602081905260409091200154600160a01b900460ff16156110d65760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff1661113e576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b158015611125575f5ffd5b505af1158015611137573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff166111a65760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b61121f61169d565b5f8181526001602081905260409091200154600160a01b900460ff16156112585760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff166112c0576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b1580156112a7575f5ffd5b505af11580156112b9573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff166113285760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b6113a161169d565b5f8181526001602081905260409091200154600160a01b900460ff16156113da5760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff16611442576040516001600160a01b038316906323b872dd903390309086906024015f604051808303815f87803b158015611429575f5ffd5b505af115801561143b573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff166114aa5760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b61152361169d565b5f8181526001602081905260409091200154600160a01b900460ff161561155c5760405162461bcd60e51b815260040161025390611700565b5f8181526001602081905260409091200154600160a81b900460ff166115c4576040516001600160a01b038316906323b872dd903090309086906024015f604051808303815f87803b1580156115ab575f5ffd5b505af11580156115bd573d5f5f3e3d5ffd5b5050505050505b5f8181526001602081905260409091200154600160b01b900460ff1661162c5760405162461bcd60e51b815260206004820152601b60248201527f42544320706179656e74206e6f7420636f6e6669726d6564000000000000000060448201526064016102535b5f8181526001602052604090206009015442106108a25760405162461bcd60e51b815260040161025390611733565b6002600154036116ef5760405162461bcd60e51b815260206004820152601f60248201527f5265656e7472616e637947756172643a207265656e7472616e742063616c6c0060448201526064016102535b6002600155565b60016001819055565b602081526000825180602084015260005b8181101561172e5760208186018101516040868401015201611712565b506000604082850101526040601f19601f83011684010191505092915050565b6000602082840312156117605f5ffd5b5035919050565b80356001600160a01b038116811461177d575f5ffd5b919050565b5f5f5f5f5f5f60c08789031215611797575f5ffd5b6117a087611767565b95506117ae60208801611767565b94506040870135935060608701356001600160401b038111156117cf575f5ffd5b87016080818a0312156117e0575f5ffd5b9250608087013591506117f560a08801611767565b90509295509295509295565b5f5f6040838503121561181257f5ffd5b8235915060208301356001600160401b0381111561182e575f5ffd5b8301601f8101851361183e575f5ffd5b80356001600160401b0381111561185357f5ffd5b8560208260051b840101111561186757f5ffd5b6020919091019392505050565b5f6020828403121561188457f5ffd5b61188d82611767565b9392505050565b634e487b7160e01b5f52602260045260245ffd5b600181811c908216806118bc57607f821691505b6020821081036118da576118da611894565b50919050565b601f8211156119245f81815260208120601f850160051c810160208610156119055750505b601f850160051c820191505b8181101561192457828155600101611911565b505b505050565b81516001600160401b0381111561194457611944611894565b611958816119528454611894565b846118e0565b602080601f83116001811461198b575f84156119745750858301515b5f19600386901b1c1916600185901b178555611924565b5f85815260208120601f198616915b828110156119b95788860151825594840194600190910190840161199a565b50858210156119d657878501515f19600388901b60f8161c191681555b5050505050600190811b01905550565b634e487b7160e01b5f52601160045260245ffd5b8082018082111561175e5761175e6119e6565b8181038181111561175e5761175e6119e6565b5f60208284031215611a3757f5ffd5b81516001600160401b03811115611a4c575f5ffd5b8201601f81018413611a5c575f5ffd5b80516001600160401b03811115611a7557611a75611894565b611a88601f8201601f19166020016118e0565b818152856020838501011115611a9c575f5ffd5b611aad826020830160208601611712565b95945050505050565b5f60208284031215611ac657f5ffd5b8151801515811461188d575f5ffd5b5f8251611ae7818460208701611712565b919091019291505056fea2646970667358221220b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d364736f6c634300081b0033"
+  },
+  {
+    name: "BTCToNFTEscrow",
+    contractCode: `// SPDX-License-Identifier: MIT
+pragma solidity 0.8.27;
+
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+/**
+ * @title Social Wager Escrow Contract
+ * @dev Automated social wagering with customizable parameters and resolution logic
+ */
+contract SocialWagerEscrow is ReentrancyGuard, Ownable {
+    struct Wager {
+        address creator;
+        string description;
+        uint256 totalPool;
+        uint256 createdAt;
+        uint256 expiresAt;
+        uint256 resolutionDeadline;
+        bool resolved;
+        bool cancelled;
+        WagerOutcome outcome;
+        uint256 creatorStake;
+        mapping(address => uint256) participantStakes;
+        mapping(address => WagerOutcome) participantBets;
+        address[] participants;
+        uint256 totalYesStakes;
+        uint256 totalNoStakes;
+    }
+
+    enum WagerOutcome {
+        PENDING,
+        YES,
+        NO,
+        DRAW
+    }
+
+    mapping(uint256 => Wager) public wagers;
+    mapping(address => bool) public authorizedResolvers;
+    uint256 public nextWagerId;
+    uint256 public platformFeePercent = 250; // 2.5%
+    uint256 public constant MAX_FEE_PERCENT = 1000; // 10%
+    address public feeRecipient;
+
+    event WagerCreated(
+        uint256 indexed wagerId,
+        address indexed creator,
+        string description,
+        uint256 creatorStake,
+        uint256 expiresAt,
+        uint256 resolutionDeadline
+    );
+
+    event WagerParticipation(
+        uint256 indexed wagerId,
+        address indexed participant,
+        uint256 stake,
+        WagerOutcome bet
+    );
+
+    event WagerResolved(
+        uint256 indexed wagerId,
+        WagerOutcome outcome,
+        address resolver
+    );
+
+    event WagerCancelled(uint256 indexed wagerId);
+    event PayoutDistributed(uint256 indexed wagerId, address indexed winner, uint256 amount);
+    event ResolverUpdated(address indexed resolver, bool authorized);
+
+    modifier onlyAuthorizedResolver() {
+        require(authorizedResolvers[msg.sender] || msg.sender == owner(), "Not authorized resolver");
+        _;
+    }
+
+    modifier validWager(uint256 wagerId) {
+        require(wagerId < nextWagerId, "Invalid wager ID");
+        require(!wagers[wagerId].resolved, "Wager already resolved");
+        require(!wagers[wagerId].cancelled, "Wager cancelled");
+        _;
+    }
+
+    constructor(address _feeRecipient) Ownable(msg.sender) {
+        feeRecipient = _feeRecipient;
+        authorizedResolvers[msg.sender] = true;
+    }
+
+    function createWager(
+        string memory _description,
+        uint256 _expirationHours,
+        uint256 _resolutionHours,
+        WagerOutcome _creatorBet
+    ) external payable {
+        require(msg.value > 0, "Must stake ETH");
+        require(_creatorBet == WagerOutcome.YES || _creatorBet == WagerOutcome.NO, "Invalid bet");
+        require(_expirationHours > 0 && _expirationHours <= 8760, "Invalid expiration"); // Max 1 year
+        require(_resolutionHours > 0 && _resolutionHours <= 168, "Invalid resolution time"); // Max 1 week
+
+        uint256 wagerId = nextWagerId++;
+        Wager storage wager = wagers[wagerId];
+        
+        wager.creator = msg.sender;
+        wager.description = _description;
+        wager.totalPool = msg.value;
+        wager.createdAt = block.timestamp;
+        wager.expiresAt = block.timestamp + (_expirationHours * 1 hours);
+        wager.resolutionDeadline = wager.expiresAt + (_resolutionHours * 1 hours);
+        wager.resolved = false;
+        wager.cancelled = false;
+        wager.outcome = WagerOutcome.PENDING;
+        wager.creatorStake = msg.value;
+        wager.participantBets[msg.sender] = _creatorBet;
+        wager.participants.push(msg.sender);
+
+        if (_creatorBet == WagerOutcome.YES) {
+            wager.totalYesStakes = msg.value;
+        } else {
+            wager.totalNoStakes = msg.value;
+        }
+
+        emit WagerCreated(
+            wagerId,
+            msg.sender,
+            _description,
+            msg.value,
+            wager.expiresAt,
+            wager.resolutionDeadline
+        );
+    }
+
+    function participateInWager(
+        uint256 wagerId,
+        WagerOutcome bet
+    ) external payable validWager(wagerId) nonReentrant {
+        require(msg.value > 0, "Must stake ETH");
+        require(bet == WagerOutcome.YES || bet == WagerOutcome.NO, "Invalid bet");
+        require(block.timestamp < wagers[wagerId].expiresAt, "Wager expired");
+        require(wagers[wagerId].participantStakes[msg.sender] == 0, "Already participated");
+
+        Wager storage wager = wagers[wagerId];
+        wager.participantStakes[msg.sender] = msg.value;
+        wager.participantBets[msg.sender] = bet;
+        wager.participants.push(msg.sender);
+        wager.totalPool += msg.value;
+
+        if (bet == WagerOutcome.YES) {
+            wager.totalYesStakes += msg.value;
+        } else {
+            wager.totalNoStakes += msg.value;
+        }
+
+        emit WagerParticipation(wagerId, msg.sender, msg.value, bet);
+    }
+
+    function resolveWager(
+        uint256 wagerId,
+        WagerOutcome outcome
+    ) external onlyAuthorizedResolver validWager(wagerId) nonReentrant {
+        require(
+            outcome == WagerOutcome.YES || 
+            outcome == WagerOutcome.NO || 
+            outcome == WagerOutcome.DRAW,
+            "Invalid outcome"
+        );
+        require(
+            block.timestamp >= wagers[wagerId].expiresAt,
+            "Wager still active"
+        );
+        require(
+            block.timestamp <= wagers[wagerId].resolutionDeadline,
+            "Resolution deadline passed"
+        );
+
+        Wager storage wager = wagers[wagerId];
+        wager.resolved = true;
+        wager.outcome = outcome;
+
+        emit WagerResolved(wagerId, outcome, msg.sender);
+        _distributePayout(wagerId);
+    }
+
+    function _distributePayout(uint256 wagerId) internal {
+        Wager storage wager = wagers[wagerId];
+        uint256 totalPool = wager.totalPool;
+        uint256 platformFee = (totalPool * platformFeePercent) / 10000;
+        uint256 distributionPool = totalPool - platformFee;
+
+        // Send platform fee
+        if (platformFee > 0) {
+            payable(feeRecipient).transfer(platformFee);
+        }
+
+        if (wager.outcome == WagerOutcome.DRAW) {
+            // Refund all participants proportionally
+            for (uint256 i = 0; i < wager.participants.length; i++) {
+                address participant = wager.participants[i];
+                uint256 stake = (participant == wager.creator) ? 
+                    wager.creatorStake : wager.participantStakes[participant];
+                
+                if (stake > 0) {
+                    uint256 refund = (stake * distributionPool) / totalPool;
+                    payable(participant).transfer(refund);
+                    emit PayoutDistributed(wagerId, participant, refund);
+                }
+            }
+        } else {
+            // Distribute to winners
+            uint256 winningStakes = (wager.outcome == WagerOutcome.YES) ? 
+                wager.totalYesStakes : wager.totalNoStakes;
+            
+            if (winningStakes > 0) {
+                for (uint256 i = 0; i < wager.participants.length; i++) {
+                    address participant = wager.participants[i];
+                    WagerOutcome participantBet = wager.participantBets[participant];
+                    
+                    if (participantBet == wager.outcome) {
+                        uint256 stake = (participant == wager.creator) ? 
+                            wager.creatorStake : wager.participantStakes[participant];
+                        
+                        if (stake > 0) {
+                            uint256 payout = (stake * distributionPool) / winningStakes;
+                            payable(participant).transfer(payout);
+                            emit PayoutDistributed(wagerId, participant, payout);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function cancelWager(uint256 wagerId) external validWager(wagerId) nonReentrant {
+        Wager storage wager = wagers[wagerId];
+        require(
+            msg.sender == wager.creator || 
+            block.timestamp > wager.resolutionDeadline,
+            "Cannot cancel wager"
+        );
+
+        wager.cancelled = true;
+
+        // Refund all participants
+        for (uint256 i = 0; i < wager.participants.length; i++) {
+            address participant = wager.participants[i];
+            uint256 stake = (participant == wager.creator) ? 
+                wager.creatorStake : wager.participantStakes[participant];
+            
+            if (stake > 0) {
+                payable(participant).transfer(stake);
+            }
+        }
+
+        emit WagerCancelled(wagerId);
+    }
+
+    function updateResolver(address resolver, bool authorized) external onlyOwner {
+        authorizedResolvers[resolver] = authorized;
+        emit ResolverUpdated(resolver, authorized);
+    }
+
+    function updatePlatformFee(uint256 newFeePercent) external onlyOwner {
+        require(newFeePercent <= MAX_FEE_PERCENT, "Fee too high");
+        platformFeePercent = newFeePercent;
+    }
+
+    function updateFeeRecipient(address newRecipient) external onlyOwner {
+        require(newRecipient != address(0), "Invalid recipient");
+        feeRecipient = newRecipient;
+    }
+
+    function getWagerDetails(uint256 wagerId) external view returns (
+        address creator,
+        string memory description,
+        uint256 totalPool,
+        uint256 createdAt,
+        uint256 expiresAt,
+        uint256 resolutionDeadline,
+        bool resolved,
+        bool cancelled,
+        WagerOutcome outcome,
+        uint256 totalYesStakes,
+        uint256 totalNoStakes
+    ) {
+        Wager storage wager = wagers[wagerId];
+        return (
+            wager.creator,
+            wager.description,
+            wager.totalPool,
+            wager.createdAt,
+            wager.expiresAt,
+            wager.resolutionDeadline,
+            wager.resolved,
+            wager.cancelled,
+            wager.outcome,
+            wager.totalYesStakes,
+            wager.totalNoStakes
+        );
+    }
+
+    function getParticipantBet(uint256 wagerId, address participant) external view returns (
+        uint256 stake,
+        WagerOutcome bet
+    ) {
+        Wager storage wager = wagers[wagerId];
+        uint256 participantStake = (participant == wager.creator) ? 
+            wager.creatorStake : wager.participantStakes[participant];
+        
+        return (participantStake, wager.participantBets[participant]);
+    }
+
+    receive() external payable {
+        revert("Direct payments not accepted");
+    }
+}`,
+    abi: [{"inputs":[{"internalType":"address","name":"_feeRecipient","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},{"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"OwnableInvalidOwner","type":"error"},{"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"OwnableUnauthorizedAccount","type":"error"},{"inputs":[],"name":"ReentrancyGuardReentrantCall","type":"error"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"previousOwner","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"wagerId","type":"uint256"},{"indexed":true,"internalType":"address","name":"winner","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"PayoutDistributed","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"resolver","type":"address"},{"indexed":false,"internalType":"bool","name":"authorized","type":"bool"}],"name":"ResolverUpdated","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"wagerId","type":"uint256"}],"name":"WagerCancelled","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"wagerId","type":"uint256"},{"indexed":true,"internalType":"address","name":"creator","type":"address"},{"indexed":false,"internalType":"string","name":"description","type":"string"},{"indexed":false,"internalType":"uint256","name":"creatorStake","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"expiresAt","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"resolutionDeadline","type":"uint256"}],"name":"WagerCreated","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"wagerId","type":"uint256"},{"indexed":true,"internalType":"address","name":"participant","type":"address"},{"indexed":false,"internalType":"uint256","name":"stake","type":"uint256"},{"indexed":false,"internalType":"uint8","name":"bet","type":"uint8"}],"name":"WagerParticipation","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"uint256","name":"wagerId","type":"uint256"},{"indexed":false,"internalType":"uint8","name":"outcome","type":"uint8"},{"indexed":false,"internalType":"address","name":"resolver","type":"address"}],"name":"WagerResolved","type":"event"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"authorizedResolvers","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"wagerId","type":"uint256"}],"name":"cancelWager","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"string","name":"_description","type":"string"},{"internalType":"uint256","name":"_expirationHours","type":"uint256"},{"internalType":"uint256","name":"_resolutionHours","type":"uint256"},{"internalType":"uint8","name":"_creatorBet","type":"uint8"}],"name":"createWager","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[],"name":"feeRecipient","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"wagerId","type":"uint256"},{"internalType":"address","name":"participant","type":"address"}],"name":"getParticipantBet","outputs":[{"internalType":"uint256","name":"stake","type":"uint256"},{"internalType":"uint8","name":"bet","type":"uint8"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"wagerId","type":"uint256"}],"name":"getWagerDetails","outputs":[{"internalType":"address","name":"creator","type":"address"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint256","name":"totalPool","type":"uint256"},{"internalType":"uint256","name":"createdAt","type":"uint256"},{"internalType":"uint256","name":"expiresAt","type":"uint256"},{"internalType":"uint256","name":"resolutionDeadline","type":"uint256"},{"internalType":"bool","name":"resolved","type":"bool"},{"internalType":"bool","name":"cancelled","type":"bool"},{"internalType":"uint8","name":"outcome","type":"uint8"},{"internalType":"uint256","name":"totalYesStakes","type":"uint256"},{"internalType":"uint256","name":"totalNoStakes","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"nextWagerId","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"wagerId","type":"uint256"},{"internalType":"uint8","name":"bet","type":"uint8"}],"name":"participateInWager","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[],"name":"platformFeePercent","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"renounceOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"wagerId","type":"uint256"},{"internalType":"uint8","name":"outcome","type":"uint8"}],"name":"resolveWager","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"newRecipient","type":"address"}],"name":"updateFeeRecipient","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"newFeePercent","type":"uint256"}],"name":"updatePlatformFee","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"resolver","type":"address"},{"internalType":"bool","name":"authorized","type":"bool"}],"name":"updateResolver","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"wagers","outputs":[{"internalType":"address","name":"creator","type":"address"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint256","name":"totalPool","type":"uint256"},{"internalType":"uint256","name":"createdAt","type":"uint256"},{"internalType":"uint256","name":"expiresAt","type":"uint256"},{"internalType":"uint256","name":"resolutionDeadline","type":"uint256"},{"internalType":"bool","name":"resolved","type":"bool"},{"internalType":"bool","name":"cancelled","type":"bool"},{"internalType":"uint8","name":"outcome","type":"uint8"},{"internalType":"uint256","name":"creatorStake","type":"uint256"},{"internalType":"uint256","name":"totalYesStakes","type":"uint256"},{"internalType":"uint256","name":"totalNoStakes","type":"uint256"}],"stateMutability":"view","type":"function"},{"stateMutability":"payable","type":"receive"}],
+    bytecode: "0x608060405234801561000f575f5ffd5b50604051611c38380380611c3883398101604081905261002e91610054565b600180556003805473ffffffffffffffffffffffffffffffffffffffff19166001600160a01b0392909216919091179055610081565b5f602082840312156100645f5ffd5b81516001600160a01b038116811461007a575f5ffd5b9392505050565b611ba8806100905f395ff3fe608060405234801561000f575f5ffd5b50600436106100e5575f3560e01c80637dc0d1d01161008757806395d89b411161006157806395d89b41146101d5578063a8abe69c146101dd578063c17da6d8146101f0578063ee22610b14610203575f5ffd5b80637dc0d1d0146101a25780638da5cb5b146101b55780639507d39a146101c8575f5ffd5b80632a58b300116100c35780632a58b300146101425780634e71d92d1461015557806370a0823114610168578063715018a61461018b575f5ffd5b80630c4b7b8c146100ea57806318160ddd146100ff57806323b872dd14610112575b5f5ffd5b6100fd6100f8366004611234565b610216565b005b6100fd61010d3660046112a6565b610439565b6100fd6101203660046112be565b6106aa565b6100fd610130366004611334565b6108c9565b61014561014336600461138a565b610a4b565b60405190151581526020015b60405180910390f35b6100fd610163366004611334565b610c0f565b61017b610176366004611334565b610d91565b604051901515815260200161015c565b6100fd610199366004611334565b610f13565b6003546040516001600160a01b03909116815260200161015c565b6004546040519081526020015b60405180910390f35b6100fd6101d6366004611334565b611095565b6100fd6101eb366004611334565b611217565b6100fd6101fe366004611334565b611399565b6100fd610211366004611334565b61151b565b61021e61169d565b5f8181526001602081905260409091200154600160a01b900460ff161561025c5760405162461bcd60e51b815260040161025390611700565b60405180910390fd5b5f8181526001602081905260409091200154600160a81b900460ff16156102cf5760405162461bcd60e51b815260206004820152601860248201527f546f6b656e20616c7265616479206465706f736974656400000000000000000060448201526064016102535b5f8181526001602052604090206001015433146103345760405162461bcd60e51b815260206004820152601f60248201527f4f6e6c7920746f6b656e20686f6c6465722063616e206465706f7369740000006044820152606401610253565b5f8181526001602052604090206009015442106103635760405162461bcd60e51b815260040161025390611733565b5f8181526001602052604081206002810154600381015460018301546040517f23b872dd0000000000000000000000000000000000000000000000000000000081523360048201523060248201526044810192909252909290916001600160a01b0390911690632a58b300906064015f604051808303815f87803b1580156103e6575f5ffd5b505af11580156103f8573d5f5f3e3d5ffd5b505050506001815f0160146101000a81548160ff0219169083151502179055507f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260245ffd5b"
+  },
+  {
+    name: "CBTCToERC20Escrow",
+    contractCode: `// SPDX-License-Identifier: MIT
+pragma solidity 0.8.27;
+
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
- * @title ETH-to-ERC20 Escrow Contract
- * @dev P2P transactions using ETH through escrow for ERC20 tokens.
+ * @title CBTC-to-ERC20 Escrow Contract
+ * @dev P2P transactions using CBTC through escrow for ERC20 tokens.
  */
-contract ETH2ERC20Escrow is ReentrancyGuard {
+contract CBTCToERC20Escrow is ReentrancyGuard {
 
     struct EscrowOrder {
         address partyA;
         address partyB;
         address erc20Contract;
         uint256 erc20Amount;
-        uint256 ethAmount;
+        uint256 cbtcAmount;
         bool partyADeposited;
         bool partyBDeposited;
         bool executed;
@@ -34,7 +762,7 @@ contract ETH2ERC20Escrow is ReentrancyGuard {
         address indexed partyB,
         address erc20Contract,
         uint256 erc20Amount,
-        uint256 ethAmount
+        uint256 cbtcAmount
     );
 
 

@@ -8,6 +8,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useAccount, useSignMessage } from 'wagmi'
 import ConnectButton from '@/components/ui/walletButton'
 import NextImage from 'next/image'
+import TransactionalHandling from '@/components/ui/TransactionalHandling'
 
 interface DeployedContract {
   id: string;
@@ -199,6 +200,7 @@ export default function ContractPage() {
   const isPartyB = address?.toLowerCase() === contract.partyBAddress?.toLowerCase() || (!contract.partyB && address && !isPartyA)
   const partyASigned = contract.partyASignatureStatus || false
   const partyBSigned = contract.partyBSignatureStatus || false
+  const bothPartiesSigned = partyASigned && partyBSigned
 
   return (
     <div className="min-h-screen bg-black text-white font-mono">
@@ -288,8 +290,9 @@ export default function ContractPage() {
           )}
         </div>
 
-        {/* Electronic Contract Agreement */}
-        <div className="mb-8 bg-gray-900 border border-gray-700 rounded-lg p-6">
+        {/* Electronic Contract Agreement - Only show before both parties sign */}
+        {!bothPartiesSigned && (
+          <div className="mb-8 bg-gray-900 border border-gray-700 rounded-lg p-6">
           <div className="flex items-center space-x-3 mb-4">
             <ScrollText className="h-6 w-6 text-[#d47615]" />
             <h2 className="text-xl font-bold text-white">Electronic Contract Agreement</h2>
@@ -412,98 +415,148 @@ export default function ContractPage() {
             )}
           </div>
         </div>
+        )}
 
-        {/* Signature Section */}
-        <div className="mb-8 space-y-4">
-          <h2 className="text-xl font-bold text-white flex items-center">
-            <Signature className="h-6 w-6 mr-3 text-[#d47615]" />
-            Digital Signatures
-          </h2>
+        {/* Signature Section - Only show before both parties sign */}
+        {!bothPartiesSigned && (
+          <div className="mb-8">
+            <h2 className="text-xl font-bold text-white flex items-center mb-6">
+              <Signature className="h-6 w-6 mr-3 text-[#d47615]" />
+              Digital Signatures
+            </h2>
           
-          {/* Party A Signature */}
-          <div className="bg-gray-800 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
-                  partyASigned 
-                    ? 'bg-[#d47615] border-[#d47615]' 
-                    : 'border-gray-600 hover:border-[#d47615]'
-                }`}>
-                  {partyASigned && <Check className="h-4 w-4 text-black" />}
+          {/* Side by Side Signatures */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Party A Signature */}
+            <div className="bg-gray-800 rounded-lg p-6 border-2 border-gray-700 hover:border-[#d47615]/50 transition-colors">
+              <div className="text-center space-y-4">
+                <div className="flex justify-center">
+                  <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    partyASigned 
+                      ? 'bg-[#d47615] border-[#d47615]' 
+                      : 'border-gray-600 hover:border-[#d47615]'
+                  }`}>
+                    {partyASigned && <Check className="h-5 w-5 text-black" />}
+                  </div>
                 </div>
+                
                 <div>
-                  <h3 className="text-white font-medium">Party A</h3>
-                  <p className="text-gray-400 text-xs">
+                  <h3 className="text-white font-semibold text-lg">Party A</h3>
+                  <p className="text-gray-400 text-sm mt-1">
                     {contract.partyAAddress ? 
-                      `${contract.partyAAddress.slice(0, 6)}...${contract.partyAAddress.slice(-4)}` : 
-                      'Deployer'
+                      `${contract.partyAAddress.slice(0, 8)}...${contract.partyAAddress.slice(-6)}` : 
+                      'Contract Deployer'
                     }
                   </p>
                 </div>
+                
+                <div className="border-t border-gray-600 pt-4">
+                  {!isConnected ? (
+                    <div className="space-y-2">
+                      <p className="text-gray-400 text-xs">Connect wallet to sign</p>
+                      <ConnectButton />
+                    </div>
+                  ) : isPartyA ? (
+                    !partyASigned ? (
+                      <button
+                        onClick={() => handleSignContract('A')}
+                        disabled={isSigningA}
+                        className="w-full bg-[#d47615] hover:bg-[#d47615]/80 text-black px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSigningA ? (
+                          <div className="flex items-center justify-center space-x-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-black"></div>
+                            <span>Signing...</span>
+                          </div>
+                        ) : (
+                          'Sign Contract'
+                        )}
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-center space-x-2 text-[#d47615]">
+                          <Check className="h-4 w-4" />
+                          <span className="font-medium">Signed</span>
+                        </div>
+                        <p className="text-gray-400 text-xs">Contract signed successfully</p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="space-y-2">
+                      <span className="text-yellow-400 text-sm font-medium">Wrong Wallet</span>
+                      <p className="text-gray-400 text-xs">Connect Party A wallet to sign</p>
+                    </div>
+                  )}
+                </div>
               </div>
-              
-              {!isConnected ? (
-                <ConnectButton />
-              ) : isPartyA ? (
-                !partyASigned ? (
-                  <button
-                    onClick={() => handleSignContract('A')}
-                    disabled={isSigningA}
-                    className="bg-[#d47615] hover:bg-[#d47615]/80 text-black px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    {isSigningA ? 'Signing...' : 'Sign'}
-                  </button>
-                ) : (
-                  <span className="text-[#d47615] text-sm font-medium">Signed</span>
-                )
-              ) : (
-                <span className="text-yellow-400 text-xs">Wrong wallet</span>
-              )}
             </div>
-          </div>
 
-          {/* Party B Signature */}
-          <div className="bg-gray-800 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
-                  partyBSigned 
-                    ? 'bg-[#d47615] border-[#d47615]' 
-                    : 'border-gray-600 hover:border-[#d47615]'
-                }`}>
-                  {partyBSigned && <Check className="h-4 w-4 text-black" />}
+            {/* Party B Signature */}
+            <div className="bg-gray-800 rounded-lg p-6 border-2 border-gray-700 hover:border-[#d47615]/50 transition-colors">
+              <div className="text-center space-y-4">
+                <div className="flex justify-center">
+                  <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    partyBSigned 
+                      ? 'bg-[#d47615] border-[#d47615]' 
+                      : 'border-gray-600 hover:border-[#d47615]'
+                  }`}>
+                    {partyBSigned && <Check className="h-5 w-5 text-black" />}
+                  </div>
                 </div>
+                
                 <div>
-                  <h3 className="text-white font-medium">Party B</h3>
-                  <p className="text-gray-400 text-xs">
+                  <h3 className="text-white font-semibold text-lg">Party B</h3>
+                  <p className="text-gray-400 text-sm mt-1">
                     {contract.partyBAddress ? 
-                      `${contract.partyBAddress.slice(0, 6)}...${contract.partyBAddress.slice(-4)}` : 
-                      'Counterparty'
+                      `${contract.partyBAddress.slice(0, 8)}...${contract.partyBAddress.slice(-6)}` : 
+                      'Awaiting Assignment'
                     }
                   </p>
                 </div>
+                
+                <div className="border-t border-gray-600 pt-4">
+                  {!isConnected ? (
+                    <div className="space-y-2">
+                      <p className="text-gray-400 text-xs">Connect wallet to sign</p>
+                      <ConnectButton />
+                    </div>
+                  ) : isPartyB ? (
+                    !partyBSigned ? (
+                      <button
+                        onClick={() => handleSignContract('B')}
+                        disabled={isSigningB}
+                        className="w-full bg-[#d47615] hover:bg-[#d47615]/80 text-black px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSigningB ? (
+                          <div className="flex items-center justify-center space-x-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-black"></div>
+                            <span>Signing...</span>
+                          </div>
+                        ) : (
+                          'Sign Contract'
+                        )}
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-center space-x-2 text-[#d47615]">
+                          <Check className="h-4 w-4" />
+                          <span className="font-medium">Signed</span>
+                        </div>
+                        <p className="text-gray-400 text-xs">Contract signed successfully</p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="space-y-2">
+                      <span className="text-yellow-400 text-sm font-medium">Wrong Wallet</span>
+                      <p className="text-gray-400 text-xs">Connect Party B wallet to sign</p>
+                    </div>
+                  )}
+                </div>
               </div>
-              
-              {!isConnected ? (
-                <ConnectButton />
-              ) : isPartyB ? (
-                !partyBSigned ? (
-                  <button
-                    onClick={() => handleSignContract('B')}
-                    disabled={isSigningB}
-                    className="bg-[#d47615] hover:bg-[#d47615]/80 text-black px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    {isSigningB ? 'Signing...' : 'Sign'}
-                  </button>
-                ) : (
-                  <span className="text-[#d47615] text-sm font-medium">Signed</span>
-                )
-              ) : (
-                <span className="text-yellow-400 text-xs">Use different wallet</span>
-              )}
             </div>
           </div>
         </div>
+        )}
 
         {/* Contract Execution Status */}
         {partyASigned && partyBSigned && (
@@ -516,89 +569,14 @@ export default function ContractPage() {
           </div>
         )}
 
-        {/* Main Escrow Layout - Only show after both signatures */}
+        {/* Enhanced Escrow Interface - Only show after both signatures */}
         {partyASigned && partyBSigned && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Party A Section */}
-          <div className="bg-gray-900 border border-gray-700 p-3">
-            <div className="text-center mb-6">
-              <div className="bg-blue-600 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Image className="h-8 w-8 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">Party A</h3>
-              <p className="text-gray-400 text-sm mb-4">NFT Depositor</p>
-              
-              <div className="space-y-3">
-                <div className="flex items-center justify-center space-x-2">
-                  <Circle className="h-4 w-4 text-yellow-500" />
-                  <span className="text-yellow-500 text-sm">Pending Deposit</span>
-                </div>
-                
-                <div className="bg-gray-800 p-3 rounded">
-                  <p className="text-xs text-gray-400 mb-1">Required Deposit</p>
-                  <p className="text-white font-mono">1 NFT</p>
-                </div>
-                
-                <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-                  Deposit NFT
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Escrow Status */}
-          <div className="bg-gray-900 border border-gray-700 p-6 flex flex-col justify-center">
-            <div className="text-center">
-              <div className="bg-[#d47615] p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Shield className="h-8 w-8 text-black" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">Escrow Status</h3>
-              <p className="text-gray-400 text-sm mb-4">Secure Smart Contract</p>
-              
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Party A Deposit:</span>
-                  <span className="text-yellow-500">Pending</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Party B Deposit:</span>
-                  <span className="text-yellow-500">Pending</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Contract Status:</span>
-                  <span className="text-green-500">Active</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Party B Section */}
-          <div className="bg-gray-900 border border-gray-700 p-3">
-            <div className="text-center mb-6">
-              <div className="bg-green-600 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Bitcoin className="h-8 w-8 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">Party B</h3>
-              <p className="text-gray-400 text-sm mb-4">ETH Depositor</p>
-              
-              <div className="space-y-3">
-                <div className="flex items-center justify-center space-x-2">
-                  <Circle className="h-4 w-4 text-yellow-500" />
-                  <span className="text-yellow-500 text-sm">Pending Deposit</span>
-                </div>
-                
-                <div className="bg-gray-800 p-3 rounded">
-                  <p className="text-xs text-gray-400 mb-1">Required Deposit</p>
-                  <p className="text-white font-mono">0.1 ETH</p>
-                </div>
-                
-                <Button className="w-full bg-green-600 hover:bg-green-700 text-white">
-                  Deposit ETH
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+          <TransactionalHandling 
+            contract={contract}
+            isPartyA={isPartyA}
+            isPartyB={isPartyB}
+            userAddress={address}
+          />
         )}
       </div>
     </div>
