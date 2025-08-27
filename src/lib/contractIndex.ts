@@ -242,7 +242,7 @@ contract CBTC2NFTEscrow is ReentrancyGuard, Ownable {
       name: "NFT20Escrow Contract",
       description: "This smart contract facilitates secure peer-to-peer exchanges between Non-Fungible Tokens (NFTs) and ERC20 tokens. It acts as a trustless intermediary, ensuring both parties fulfill their commitments before the exchange is completed. For example, Alice can use this contract to safely trade her rare digital artwork NFT for Bob's USDT tokens without the risk of either party backing out mid-transaction. The contract holds both assets in escrow until both parties have made their deposits, after which the exchange can be executed, or cancelled if needed, providing a safe and efficient way to swap any NFT for ERC20 tokens.",
       contract_code: `// SPDX-License-Identifier: MIT
-  pragma solidity 0.8.27;
+  pragma solidity 0.8.0;
   
   import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
   import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -415,7 +415,7 @@ contract CBTC2NFTEscrow is ReentrancyGuard, Ownable {
       name: "NFT2NFTEscrow Contract",
       description: "This smart contract facilitates secure peer-to-peer exchanges between two different Non-Fungible Tokens (NFTs). It acts as a trustless intermediary, ensuring both parties fulfill their commitments before the exchange is completed. For example, Alice can use this contract to safely trade her rare digital artwork NFT for Bob's unique virtual real estate NFT without the risk of either party backing out mid-transaction. The contract holds both NFTs in escrow until both parties have made their deposits, after which the exchange can be executed, or cancelled if needed, providing a safe and efficient way to swap any two NFTs.",
       contract_code: `// SPDX-License-Identifier: MIT
-  pragma solidity 0.8.27;
+  pragma solidity 0.8.0;
   
   import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
   import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -587,7 +587,7 @@ contract CBTC2NFTEscrow is ReentrancyGuard, Ownable {
       name: "ERC20ToERC20Escrow Contract",
       description: "This smart contract facilitates secure peer-to-peer exchanges between different ERC20 tokens. It acts as a trustless intermediary, ensuring both parties fulfill their commitments before the exchange is completed. For example, Alice can use this contract to safely trade her USDC tokens for Bob's DAI tokens without the risk of either party backing out mid-transaction. The contract holds both types of tokens in escrow until both parties have made their deposits, after which the exchange can be executed, or cancelled if needed, providing a safe and efficient way to swap any two ERC20 tokens.",
       contract_code: `// SPDX-License-Identifier: MIT
-  pragma solidity 0.8.27;
+  pragma solidity 0.8.0;
   
   import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
   import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
