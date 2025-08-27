@@ -92,6 +92,79 @@ export function TransactionalHandling({ contract, isPartyA, isPartyB, userAddres
     executed: false
   })
 
+  const getOrderStatus = (partyADeposited: boolean, partyBDeposited: boolean, executed: boolean): EscrowOrder['status'] => {
+    if (executed) {
+      return 'Completed'
+    } else if (partyADeposited && partyBDeposited) {
+      return 'NFTDeposited' // Both parties have deposited, ready for execution
+    } else if (partyADeposited) {
+      return 'CBTCDeposited'
+    } else {
+      return 'Created'
+    }
+  }
+
+  const initializeContract = useCallback(async () => {
+    try {
+      if (typeof window !== 'undefined' && window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum)
+        const signer = await provider.getSigner()
+        const contractInstance = new ethers.Contract(contract.contractAddress, contract.abi, signer)
+        setContractInstance(contractInstance)
+      }
+    } catch (err) {
+      console.error('Failed to initialize contract:', err)
+      setError('Failed to connect to contract')
+    }
+  }, [contract.contractAddress, contract.abi])
+
+  const loadEscrowOrders = useCallback(async () => {
+    if (!contract.contractAddress || !contract.abi) return
+    
+    setIsLoadingOrders(true)
+    try {
+      if (contractInstance) {
+        // Read escrow orders from the contract
+        try {
+          // Get the next order ID to know how many orders exist
+          const nextOrderId = await contractInstance.nextOrderId()
+          const orders: EscrowOrder[] = []
+          
+          // Load all existing orders
+          for (let i = 0; i < nextOrderId; i++) {
+            try {
+              const escrowOrder = await contractInstance.escrowOrders(i)
+              
+              if (escrowOrder && escrowOrder.partyA !== '0x0000000000000000000000000000000000000000') {
+                orders.push({
+                  orderId: i.toString(),
+                  partyA: escrowOrder.partyA,
+                  partyB: escrowOrder.partyB,
+                  nftContract: escrowOrder.nftContract,
+                  tokenId: escrowOrder.nftTokenId.toString(),
+                  cbtcAmount: ethers.formatEther(escrowOrder.cbtcAmount), // CBTC uses 18 decimals like ETH
+                  status: getOrderStatus(escrowOrder.partyADeposited, escrowOrder.partyBDeposited, escrowOrder.executed),
+                  createdAt: Number(escrowOrder.createdAt) * 1000 // Convert to milliseconds
+                })
+              }
+            } catch (orderErr) {
+              console.log(`Order ${i} not found or error:`, orderErr)
+            }
+          }
+          
+          setEscrowOrders(orders)
+        } catch (err) {
+          console.error('Error loading orders:', err)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load escrow orders:', err)
+      setError('Failed to load escrow orders')
+    } finally {
+      setIsLoadingOrders(false)
+    }
+  }, [contractInstance, contract.contractAddress, contract.abi])
+
   // Load escrow orders on component mount
   useEffect(() => {
     if (contract.contractAddress && isConnected) {
@@ -148,109 +221,6 @@ export function TransactionalHandling({ contract, isPartyA, isPartyB, userAddres
       }
     }
   }, [contractInstance])
-
-  const initializeContract = useCallback(async () => {
-    try {
-      if (typeof window !== 'undefined' && window.ethereum) {
-        const provider = new ethers.BrowserProvider(window.ethereum)
-        const signer = await provider.getSigner()
-        const contractInstance = new ethers.Contract(contract.contractAddress, contract.abi, signer)
-        setContractInstance(contractInstance)
-      }
-    } catch (err) {
-      console.error('Failed to initialize contract:', err)
-      setError('Failed to connect to contract')
-    }
-  }, [contract.contractAddress, contract.abi])
-
-  const loadEscrowOrders = useCallback(async () => {
-    if (!contract.contractAddress || !contract.abi) return
-    
-    setIsLoadingOrders(true)
-    try {
-      if (contractInstance) {
-        // Read escrow orders from the contract
-        try {
-          // Get the next order ID to know how many orders exist
-          const nextOrderId = await contractInstance.nextOrderId()
-          const orders: EscrowOrder[] = []
-          
-          // Load all existing orders
-          for (let i = 0; i < nextOrderId; i++) {
-            try {
-              const escrowOrder = await contractInstance.escrowOrders(i)
-              
-              if (escrowOrder && escrowOrder.partyA !== '0x0000000000000000000000000000000000000000') {
-                orders.push({
-                  orderId: i.toString(),
-                  partyA: escrowOrder.partyA,
-                  partyB: escrowOrder.partyB,
-                  nftContract: escrowOrder.nftContract,
-                  tokenId: escrowOrder.nftTokenId.toString(),
-                  cbtcAmount: ethers.formatEther(escrowOrder.cbtcAmount), // CBTC uses 18 decimals like ETH
-                  status: getOrderStatus(escrowOrder.partyADeposited, escrowOrder.partyBDeposited, escrowOrder.executed),
-                  createdAt: Number(escrowOrder.createdAt) * 1000 // Convert to milliseconds
-                })
-              }
-            } catch (orderErr) {
-              console.log(`Order ${i} not found or error:`, orderErr)
-            }
-          }
-          
-          setEscrowOrders(orders)
-          
-          // Update escrow status based on the latest order (if any)
-          if (orders.length > 0) {
-            const latestOrder = orders[orders.length - 1]
-            setEscrowStatus({
-              partyADeposited: latestOrder.status === 'CBTCDeposited' || latestOrder.status === 'Completed',
-              partyBDeposited: latestOrder.status === 'NFTDeposited' || latestOrder.status === 'Completed',
-              executed: latestOrder.status === 'Completed'
-            })
-          } else {
-            setEscrowStatus({
-              partyADeposited: false,
-              partyBDeposited: false,
-              executed: false
-            })
-          }
-        } catch (contractError) {
-          console.log('No escrow orders found or contract method not available')
-          setEscrowOrders([])
-          setEscrowStatus({
-            partyADeposited: false,
-            partyBDeposited: false,
-            executed: false
-          })
-        }
-      } else {
-        // Fallback to mock data when contract is not available
-        setEscrowOrders([])
-        setEscrowStatus({
-          partyADeposited: false,
-          partyBDeposited: false,
-          executed: false
-        })
-      }
-    } catch (err) {
-      console.error('Failed to fetch escrow orders:', err)
-      setError('Failed to load escrow orders')
-    } finally {
-      setIsLoadingOrders(false)
-    }
-  }
-
-  const getOrderStatus = (partyADeposited: boolean, partyBDeposited: boolean, executed: boolean): EscrowOrder['status'] => {
-    if (executed) {
-      return 'Completed'
-    } else if (partyADeposited && partyBDeposited) {
-      return 'NFTDeposited' // Both parties have deposited, ready for execution
-    } else if (partyADeposited) {
-      return 'CBTCDeposited'
-    } else {
-      return 'Created'
-    }
-  }
 
   const createEscrowOrder = async () => {
     if (!walletClient || !walletAddress || !contract.contractAddress) {
