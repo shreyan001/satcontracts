@@ -3,7 +3,7 @@ export const contractsArray = [
       name: "CBTC2NFTEscrow Contract",
       description: "This smart contract facilitates secure peer-to-peer exchanges between CBTC (Citrea Bitcoin) and Non-Fungible Tokens (NFTs) on the Citrea zkRollup. It acts as a trustless intermediary, ensuring both parties fulfill their commitments before the exchange is completed. For example, Alice can use this contract to safely trade her CBTC for Bob's unique digital artwork NFT without the risk of either party backing out mid-transaction. The contract holds both assets in escrow until both parties have made their deposits, after which the exchange can be executed, or cancelled if needed, providing a safe and efficient way to swap CBTC for any NFT on Citrea.",
       contract_code: `// SPDX-License-Identifier: MIT
-pragma solidity 0.8.27;
+pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";

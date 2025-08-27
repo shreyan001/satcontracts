@@ -4,6 +4,15 @@ import fs from 'fs';
 import path from 'path';
 import { flatternFile } from '@ericxstone/sol-flattener';
 
+// Use default solc compiler to avoid timeout issues
+const compiler = solc;
+
+// Initialize compiler (now just returns the default solc)
+async function initializeCompiler() {
+  console.log('✅ Using default Solidity compiler');
+  return compiler;
+}
+
 // Enhanced error handling and logging
 function logCompilationStep(step: string, data?: any) {
   console.log(`🔧 [Compilation] ${step}`, data ? JSON.stringify(data, null, 2) : '');
@@ -146,7 +155,6 @@ async function compileContract(sourceCode: string, useFlattening: boolean = true
 
     // Note: Dependencies should already be resolved through flattening process
     logCompilationStep('Using flattened source code for compilation', { 
-      hasImports: sourceCode.includes('import '),
       sourceLength: sourceCode.length 
     });
 
@@ -166,11 +174,15 @@ async function compileContract(sourceCode: string, useFlattening: boolean = true
             '*': ['abi', 'evm.bytecode', 'evm.deployedBytecode', 'metadata'],
           },
         },
+        evmVersion: 'paris'
       },
     };
     
+    // Get the compiler instance
+    const compilerInstance = await initializeCompiler();
+    
     logCompilationStep('Compiling with solc', { sourcesCount: Object.keys(sources).length });
-    const compiledContract = JSON.parse(solc.compile(JSON.stringify(input)));
+    const compiledContract = JSON.parse(compilerInstance.compile(JSON.stringify(input)));
     
     // Enhanced error handling
     if (compiledContract.errors) {
@@ -309,6 +321,9 @@ export async function POST(request: Request) {
       });
     }
 
+    // Initialize the compiler with the correct version
+    const compilerInstance = await initializeCompiler();
+    
     // Compile the processed contract
     const result = await compileContract(processedSourceCode, true, contractName);
      
